@@ -1,0 +1,4 @@
+fxtranslate==0.5.0
+lemminflect
+pytest
+pyflakes

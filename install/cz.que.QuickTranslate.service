@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=cz.que.QuickTranslate
+Exec=@REPO@/bin/quick-translate --gapplication-service

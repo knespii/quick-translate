@@ -1,0 +1,7 @@
+{
+  "uuid": "quick-translate@que.cz",
+  "name": "Quick Translate",
+  "description": "Spotlight-like placement for the Quick Translate popup: top of the screen, no animation, reliable focus, click outside closes it. The popup itself is a separate app.",
+  "shell-version": ["48"],
+  "url": ""
+}

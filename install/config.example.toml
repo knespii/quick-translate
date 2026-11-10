@@ -1,0 +1,29 @@
+# Copy to ~/.config/quick-translate/config.toml and change what you need.
+
+[ui]
+rows = 7            # visible result rows
+width = 680
+
+[prefill]
+enabled = true      # prefill the query from the selected (PRIMARY) text
+max_chars = 80          # a word or phrase: single line, up to this many characters
+max_paragraph_chars = 2000  # paragraph mode: longer / multi-line selections up to this (max 2000), cut at a
+                            # sentence end; a selection over 3x this (e.g. Ctrl+A on a page) is ignored
+
+[mt]
+enabled = true      # offline phrase translation (Bergamot)
+debounce_ms = 120
+
+[paragraph]
+auto_llm = true     # odstavec česky -> anglicky: po dopsání se strojový překlad sám zpřesní lokálním LLM
+                    # (en -> cs zůstává strojový, LLM jen ručně přes Ctrl+E)
+
+[online]
+enabled = true      # Ctrl+L asks LINDAT (MFF UK); nothing is sent without Ctrl+L
+timeout = 4
+
+[llm]
+model = "gemma3:4b"
+url = "http://127.0.0.1:11434"
+keep_alive = "10m"
+timeout = 60

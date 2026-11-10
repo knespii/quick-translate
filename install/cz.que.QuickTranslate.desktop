@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Quick Translate
+Comment=Rychlý překladač čeština ↔ angličtina
+Exec=@REPO@/bin/quick-translate
+Icon=accessories-dictionary-symbolic
+NoDisplay=true
+Terminal=false
+Categories=Utility;Dictionary;

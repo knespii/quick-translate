@@ -1,0 +1,98 @@
+/* Spotlight-like card. Colors follow libadwaita, so light and dark mode both work. */
+window.qt-popup {
+  background-color: color-mix(in srgb, var(--window-bg-color) 93%, transparent);
+  border-radius: 16px;
+}
+/* Liquid Glass from the GNOME extension underneath: no background and no shadow of our own
+   (the glass draws its edge, contour and shadow). */
+window.qt-popup.qt-glass {
+  background-color: transparent;
+  box-shadow: none;
+}
+.qt-entry {
+  font-size: 20px;
+  padding: 0 18px;
+  background: none;
+  border: none;
+  box-shadow: none;
+  outline: none;
+}
+/* The input is a GtkTextView (multi-line for paragraphs): keep it as transparent as the old entry. */
+textview.qt-entry, textview.qt-entry > text { background: none; }
+.qt-entry > text { caret-color: var(--accent-color); }
+.qt-placeholder { font-size: 20px; padding: 0 18px; opacity: 0.45; }
+.qt-list { background: none; }
+.qt-row {
+  padding: 4px 18px;
+  border-radius: 10px;
+  margin: 2px 6px;
+  transition: background-color 120ms ease-out;
+}
+.qt-row:hover {
+  background-color: color-mix(in srgb, currentColor 6%, transparent);
+}
+.qt-row.selected {
+  background-color: color-mix(in srgb, var(--accent-bg-color) 22%, transparent);
+}
+.qt-footer {
+  font-size: 11px;
+  opacity: 0.5;
+  padding: 7px 14px 8px 14px;
+  border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+}
+.qt-head { font-size: 15px; }
+.qt-sub { font-size: 13px; opacity: 0.85; }
+.qt-label { font-size: 12px; opacity: 0.55; }
+.qt-badge {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 1px 6px;
+  border-radius: 6px;
+  min-width: 18px;
+}
+.qt-badge-cs { background-color: color-mix(in srgb, #3584e4 25%, transparent); }
+.qt-badge-en { background-color: color-mix(in srgb, #e66100 25%, transparent); }
+.qt-row-mt .qt-head, .qt-row-online .qt-head { font-style: italic; }
+.qt-row-info .qt-head { opacity: 0.7; }
+/* Paragraph mode: one wrapped block with a small header. */
+.qt-para-head { padding: 8px 18px 2px 18px; }
+.qt-para-hint { font-size: 11px; opacity: 0.45; }
+.qt-para-text {
+  font-size: 16px;
+  line-height: 1.35;
+  padding: 4px 18px 14px 18px;
+  transition: opacity 120ms ease-out;
+}
+.qt-para-text.qt-dim { opacity: 0.5; }
+.qt-para-text.qt-original { font-style: italic; opacity: 0.8; }
+/* Paragraph mode: dictionary alternatives for a clicked word (default popover look, readable over the glass). */
+/* Alternatives for a word of a paragraph translation: a small card like the window itself
+   (same background, corners and contour as the glass card), rows and chips like the result list. */
+popover.qt-word-pop {
+  background: none;
+  box-shadow: none;
+}
+popover.qt-word-pop > contents {
+  padding: 8px 6px 6px 6px;
+  border-radius: 14px;
+  background-color: color-mix(in srgb, var(--window-bg-color) 94%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  min-width: 0;
+}
+.qt-word-pop-head { padding: 2px 12px 2px 12px; }
+.qt-word-pop .qt-label { margin: 0 12px; }
+.qt-word-pop flowbox { margin: 0 4px 4px 4px; }
+.qt-word-pop flowboxchild { padding: 0; }
+.qt-chip {
+  font-weight: normal;
+  font-size: 13px;
+  padding: 3px 10px;
+  min-height: 24px;
+  border-radius: 10px;
+  transition: background-color 120ms ease-out;
+}
+.qt-chip:hover {
+  background-color: color-mix(in srgb, var(--accent-bg-color) 22%, transparent);
+}
+.qt-word-pop-empty { opacity: 0.6; margin: 0 12px; }

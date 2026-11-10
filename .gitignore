@@ -1,0 +1,10 @@
+data/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local notes with machine details: not published
+docs/plan.md
+docs/research.json
+docs/review.json

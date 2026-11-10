@@ -1,0 +1,107 @@
+# query	expected head (a|b = any)	max rank	expected translation in that hit (a|b = any, optional)
+zapomnel	zapomenout	3	forget
+zapomněla	zapomenout	1	forget
+forget	forget	1	zapomenout
+forgot	forget	1	zapomenout
+sel	jít	1	go
+dal si pozor	dát si pozor	1
+pozor	dát si pozor	10
+psa	pes	1	dog
+pes	pes	1	dog
+psi	pes	3	dog
+otvirak na konzervy	otvírák na konzervy	1	can opener
+otvírák	otvírák	1	opener
+can opener	can opener	1	otvírák na konzervy
+cerveny	červený	1	red
+red	red	1	červený
+zapomenot	zapomenout	1	forget
+gave up	give up	1	vzdát se
+give up	give up	1	vzdát se
+vzdát se	vzdát se	1	give up
+make sure	make sure	1	ujistit se
+mit pravdu	mít pravdu	1	be right
+mít na mysli	mít na mysli	1	have in mind|bear in mind
+look forward to	look forward to	1	těšit se na
+e-mail	e-mail	2
+ucit se	učit se	1	learn
+ucit	učit	1	teach
+pujcit si	půjčit si	1	borrow
+pujcit	půjčit	1	lend
+stat se	stát se	1	become
+take	take	1	vzít|brát
+take	také	3
+se	se	3
+si	si	1
+dog	dog	1	pes
+went	go	1	jít
+children	child	2	dítě
+mice	mouse|mice	2	myš|myši
+lidé	člověk|lidé	3	people|human
+nejlepší	nejlepší|dobrý	3	best
+nezapomenout	nezapomenout|zapomenout	2
+krásná	krásný	2	beautiful
+kniha	kniha	1	book
+knihy	kniha	1	book
+book	book	1	kniha
+dobrý den	dobrý den	1	hello|good morning|good afternoon|good day
+jak se máš	jak se máš|jak se máš?	1
+thank you	thank you	1	děkuji|děkuju|díky|děkuji vám
+díky	díky	1	thanks|thank you
+zmrzlina	zmrzlina	1	ice cream
+ice cream	ice cream	1	zmrzlina
+hrad	hrad	1	castle
+koupit	koupit	1	buy
+pocitac	počítač	1	computer
+computer	computer	1	počítač
+prijit na to	přijít na to|přijít na něco	1
+take care	take care	1	dát si pozor|starat se
+watch out	watch out	1	dávat pozor|dát si pozor|pozor
+pozornost	pozornost	1	attention
+tip of the tongue	tip of the tongue|tongue|tip	5
+smutny	smutný	1	sad
+sad	sad	1	smutný
+zub	zub	1	tooth
+teeth	tooth	2	zub
+umývat nádobí	umývat nádobí|mýt nádobí|umýt nádobí	3
+do the dishes	do the dishes|dish	3
+zapominat	zapomínat	1	forget
+zapominat	zapomenout	3
+# --- regressions found by the search-quality audit
+zeptal se	zeptat se	1	ask
+snažím se	snažit se	1	try
+smála se	smát se	1	laugh
+zeptal	zeptat se	2	ask
+vrátil jsem se	vrátit se	1	return|go back|come back
+zapomněl jsem	zapomenout	1	forget
+mám tě rád	mít rád|mám tě rád	2
+jít na nákup	jít na nákup|nákup|jít nakoupit	3
+s kamarádem	kamarád	2	friend|buddy|pal
+do práce	práce	3	work|job
+nesnáším	nesnášet	1
+horse	horse	1	kůň
+wolf	wolf	1	vlk
+ear	ear	1	ucho
+cow	cow	1	kráva
+police	police	1	policie
+the dog	dog	2	pes
+to run	run	3	běžet|běhat|utíkat|běh
+children	children|child	2	děti|dítě
+figure it out	figure out|figure it out	2
+give it up	give up|give it up	2	vzdát se|vzdát
+nech to být	nechat být|nech to být	3
+co	co	1
+je	být	2
+mel	mít	3
+mam	mít	2
+ho	ho|on	2	him
+klice	klíč	2	key
+Prague	Prague	1	Praha
+Praha	Praha	1	Prague
+dát vědět	dát vědět|dát někomu vědět	1	let know|let sb know
+dej mi vědět	dej mi vědět|dát vědět	2	let me know|let know
+co se stalo	co se stalo|stát se	3	what happened|happen
+pole	pole	2	tyč|sloup|pól
+stole	stůl|stole	3	table|desk|štóla
+mouth	mouth	1	ústa|pusa
+drahý	drahý	1	expensive|dear
+mít štěstí	mít štěstí	1	be lucky|lucky

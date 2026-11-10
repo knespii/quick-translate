@@ -1,0 +1,5 @@
+#!/bin/sh
+# Launcher for the resident Quick Translate app. D-Bus starts it with cwd=/, so cd into the repo first.
+r="$(dirname "$(readlink -f "$0")")/.."
+cd "$r" || exit 1
+exec "$r/.venv/bin/python" -m qtrans.app "$@"
