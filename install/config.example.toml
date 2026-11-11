@@ -15,11 +15,18 @@ enabled = true      # offline phrase translation (Bergamot)
 debounce_ms = 120
 
 [paragraph]
-auto_llm = true     # odstavec česky -> anglicky: po dopsání se strojový překlad sám zpřesní lokálním LLM
-                    # (en -> cs zůstává strojový, LLM jen ručně přes Ctrl+E)
+auto_llm = true     # Czech -> English paragraphs: when you stop typing, the local LLM polishes the machine translation
+                    # (English -> Czech stays machine-translated; the LLM only on Alt+E)
+
+[history]
+enabled = true      # recently translated words (Tab); the history stays on this computer
+
+[diacritics]
+enabled = true      # Czech typed without diacritics gets them back: each finished word is corrected in the input
+                    # ('mas ' -> 'máš ', Ctrl+Z undoes it); the translators get the text with diacritics
 
 [online]
-enabled = true      # Ctrl+L asks LINDAT (MFF UK); nothing is sent without Ctrl+L
+enabled = true      # Alt+L asks LINDAT (MFF UK); nothing is sent without Alt+L
 timeout = 4
 
 [llm]

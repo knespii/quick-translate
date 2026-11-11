@@ -1,4 +1,4 @@
-"""Opt-in online translation (Ctrl+L) through the LINDAT translation service of UFAL, Charles University.
+"""Opt-in online translation (Alt+L) through the LINDAT translation service of UFAL, Charles University.
 
 Only called on an explicit key press. Personal, non-commercial use per the service terms.
 """

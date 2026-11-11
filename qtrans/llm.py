@@ -45,6 +45,47 @@ TRANSLATE_SYSTEM = (
     "unchanged. Keep the paragraph breaks (blank lines) exactly as in the original. Return only the translation.")
 
 
+ALTERNATIVES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "options": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"word": {"type": "string"}, "sentence": {"type": "string"}, "why": {"type": "string"}},
+                "required": ["word", "sentence", "why"],
+            },
+        }
+    },
+    "required": ["options"],
+}
+
+ALTERNATIVES_SYSTEM = (
+    "You are a {src}-{tgt} translation editor. The user gives a {src} original, its {tgt} translation and one "
+    "word of the translation they want to change, often because it is too literal. Think about what the original "
+    "sentence really means (idioms, figurative use, terms of endearment, register) and offer up to "
+    "{n} other {tgt} ways to translate that word in this context, best first. For each give: \"word\": the {tgt} "
+    "replacement copied exactly from the new sentence (inflected, with the right article); \"sentence\": the "
+    "whole {tgt} translation rewritten with it, grammatical and natural, everything else kept as it was; "
+    "\"why\": a very short reason written in Czech (at most 6 words). Never offer the original word or just another "
+    "form of it.")
+
+FIX_SCHEMA = {
+    "type": "object",
+    "properties": {"sentence": {"type": "string"}},
+    "required": ["sentence"],
+}
+
+FIX_SYSTEM = (
+    "You are a careful {tgt} proofreader. In a {tgt} translation of a {src} text the user put a dictionary base "
+    "form of a word in place of another word, so the grammar around it may be wrong. Return the sentence with "
+    "that word kept (same meaning, in whatever form the grammar needs) and the grammar made correct: inflection, "
+    "agreement, articles, singular or plural. Change nothing else.")
+
+# Leading articles do not make a different option ("a beetle" vs "beetle").
+_ARTICLES = re.compile(r"^(?:the|an|a)\s+", re.I)
+
+
 class LLMError(Exception):
     pass
 
@@ -121,6 +162,90 @@ class LLM:
         if not isinstance(out, str) or not out.strip():
             raise LLMError("nečitelná odpověď modelu")
         return out.strip()
+
+    def alternatives_in_context(self, source: str, translation: str, word: str, src: str, tgt: str,
+                                n: int = 4) -> list[dict]:
+        """Up to n replacements for word that fit what the source sentence means, each with the rewritten
+        translation: [{"word", "sentence", "why"}]; the original wording is never offered."""
+        names = {"src": LANG_NAMES.get(src, src), "tgt": LANG_NAMES.get(tgt, tgt)}
+        user = (f"Original ({names['src']}): {source}\nTranslation ({names['tgt']}): {translation}\n"
+                f"Word to replace: {word}")
+        # Every option repeats the whole sentence.
+        budget = min(n * (len(translation) + 60) + 100, 2048)
+        content = self._chat(ALTERNATIVES_SYSTEM.format(n=n, **names), user, ALTERNATIVES_SCHEMA, 0.3, budget)
+        try:
+            opts = json.loads(content).get("options", [])
+        except (json.JSONDecodeError, AttributeError):
+            opts = _salvage(content)  # cut off at the token limit: keep the complete options
+            if not opts:
+                raise LLMError("nečitelná odpověď modelu")
+        if not isinstance(opts, list):
+            raise LLMError("nečitelná odpověď modelu")
+        return _clean_options(opts, translation, word)[:n]
+
+    def fix_sentence(self, source: str, sentence: str, replaced: str, src: str, tgt: str) -> str:
+        """sentence with the user's base form 'replaced' kept but the grammar around it corrected."""
+        names = {"src": LANG_NAMES.get(src, src), "tgt": LANG_NAMES.get(tgt, tgt)}
+        user = (f"Original ({names['src']}): {source}\nSentence ({names['tgt']}): {sentence}\n"
+                f"Word put in by the user: {replaced}")
+        content = self._chat(FIX_SYSTEM.format(**names), user, FIX_SCHEMA, 0.1,
+                             min(2 * len(sentence) + 100, 2048))
+        try:
+            out = json.loads(content).get("sentence")
+        except (json.JSONDecodeError, AttributeError):
+            out = None
+        if not isinstance(out, str) or not out.strip():
+            raise LLMError("nečitelná odpověď modelu")
+        return out.strip()
+
+    def _chat(self, system: str, user: str, schema: dict, temperature: float, num_predict: int) -> str:
+        body = {
+            "model": self.model, "stream": False, "format": schema, "keep_alive": self.keep_alive,
+            "options": {"temperature": temperature, "num_predict": num_predict},
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        }
+        if "thinking" in self.capabilities():
+            body["think"] = False
+        res = self._post("/api/chat", body, self.timeout)
+        return (res.get("message") or {}).get("content") or ""
+
+
+def _clean_options(opts: list, translation: str, word: str) -> list[dict]:
+    """Complete, distinct options that really change the word (the model sometimes echoes the original)."""
+    seen = {_word_key(word), translation.strip()}
+    out = []
+    for o in opts:
+        if not isinstance(o, dict):
+            continue
+        w, sent = o.get("word"), o.get("sentence")
+        if not isinstance(w, str) or not isinstance(sent, str) or not w.strip() or not sent.strip():
+            continue
+        if w.strip().lower() not in sent.lower():
+            # The model sometimes names the word in the wrong language; the rewritten sentence is what counts.
+            w = _changed_span(translation, sent)
+        key = _word_key(w)
+        if key in seen or sent.strip() in seen:
+            continue
+        seen.update((key, sent.strip()))
+        why = o.get("why")
+        out.append({"word": w.strip(), "sentence": sent.strip(), "why": why.strip() if isinstance(why, str) else ""})
+    return out
+
+
+def _changed_span(old: str, new: str) -> str:
+    """The words of new that differ from old (common leading and trailing words dropped)."""
+    a, b = old.split(), new.split()
+    i = 0
+    while i < min(len(a), len(b)) and a[i] == b[i]:
+        i += 1
+    j = 0
+    while j < min(len(a), len(b)) - i and a[-1 - j] == b[-1 - j]:
+        j += 1
+    return " ".join(b[i:len(b) - j]).strip(" ,.;:!?")
+
+
+def _word_key(w: str) -> str:
+    return _ARTICLES.sub("", w.strip(" \t.,;:!?\"'“”„«»()").lower())
 
 
 def _salvage(text: str) -> list[dict]:

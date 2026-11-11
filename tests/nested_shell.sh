@@ -12,7 +12,8 @@ T="$OUT/env"
 rm -rf "$T"; mkdir -p "$T/data/gnome-shell/extensions" "$T/config"
 ln -sfn "$REPO/extension/quick-translate@que.cz" "$T/data/gnome-shell/extensions/quick-translate@que.cz"
 before=$(ls "$XDG_RUNTIME_DIR" | grep -E '^wayland-[0-9]+$' || true)
-export XDG_CONFIG_HOME="$T/config" XDG_DATA_HOME="$T/data" GSETTINGS_BACKEND=keyfile QT_DEBUG=1
+# (A throwaway state dir too: the debug log has the typed text, and the history must not get the test's words.)
+export XDG_CONFIG_HOME="$T/config" XDG_DATA_HOME="$T/data" XDG_STATE_HOME="$T/state" GSETTINGS_BACKEND=keyfile QT_DEBUG=1
 export QT_NO_GLASS="${NO_GLASS:-0}" MUTTER_DEBUG_DUMMY_MODE_SPECS=1600x900
 gsettings set org.gnome.shell enabled-extensions "['quick-translate@que.cz']"
 gsettings set org.gnome.shell welcome-dialog-last-shown-version '999'

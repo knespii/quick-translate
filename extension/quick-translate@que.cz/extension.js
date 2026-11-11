@@ -22,7 +22,7 @@ const APP_PATH = '/cz/que/QuickTranslate';
 const WIDTH = 680; // keep in sync with [ui] width in the app config
 const TOP = 0.22;  // top edge at 22 % of the work area
 const RADIUS = 16; // the card's corners, as the app's style.css has them
-const OPEN_MS = 170; // as the app's own animation (app.py OPEN_MS)
+const OPEN_MS = 170; // as the app's own animation (popup.py OPEN_MS)
 const DEBUG = GLib.getenv('QT_DEBUG') === '1';
 
 function debug(...args) {

@@ -61,6 +61,16 @@ def test_io_result_and_stale_drop():
     assert got == ["new"]
 
 
+def test_io_always_delivers_stale_results():
+    c = make()
+    got = []
+    c.bump()
+    c.run_io(lambda: "old", got.append, always=True)
+    c.bump()
+    spin(0.3)
+    assert got == ["old"]
+
+
 def test_missing_engine_disables_mt():
     def broken():
         raise FileNotFoundError("no models")

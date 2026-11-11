@@ -3,7 +3,7 @@ import json
 import pytest
 
 from qtrans.llm import LLM, LLMError
-from qtrans.paragraph import MAX_PARAGRAPH_CHARS, clean_selection, guess_direction, is_paragraph
+from qtrans.paragraph import MAX_PARAGRAPH_CHARS, cap, clean_selection, guess_direction, is_paragraph
 
 CS_PARA = ("Pole se maže při každém zavření, nejen přes Esc, ale i přes Super+T, kliknutím mimo okno a po "
            "zkopírování Enterem. Vymaže se až po doběhnutí zavírací animace, aby text při zavírání neblikl.")
@@ -71,6 +71,13 @@ def test_clean_caps_on_word_boundary():
     text = " ".join(["slovo"] * 600)
     out = clean_selection(text)
     assert len(out) <= MAX_PARAGRAPH_CHARS and out.endswith("slovo")
+
+
+def test_cap_below_the_maximum_cuts_at_a_sentence_end():
+    # ([prefill] max_paragraph_chars under 2000: the prefill cuts the same way as the maximum.)
+    text = "První věta je tady. Druhá věta je o něco delší než ta první."
+    assert cap(text, 30) == "První věta je tady."
+    assert cap(text, 200) == text
 
 
 def test_clean_short_text_unchanged():

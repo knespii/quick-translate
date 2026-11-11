@@ -20,11 +20,11 @@ STAGGER = 0.022    # s between rows appearing in a fresh list
 
 
 class _Row:
-    __slots__ = ("key", "item", "widget", "y", "ty", "op", "top", "delay")
+    __slots__ = ("key", "item", "widget", "y", "ty", "op", "top", "delay", "h")
 
-    def __init__(self, key, item, widget, y, ty, op, top, delay=0.0):
+    def __init__(self, key, item, widget, y, ty, op, top, delay=0.0, h=0):
         self.key, self.item, self.widget = key, item, widget
-        self.y, self.ty, self.op, self.top, self.delay = y, ty, op, top, delay
+        self.y, self.ty, self.op, self.top, self.delay, self.h = y, ty, op, top, delay, h
 
 
 def _signature(item):
@@ -34,11 +34,16 @@ def _signature(item):
 class ResultList(Gtk.Widget):
     __gtype_name__ = "QtResultList"
 
-    def __init__(self, row_h: int, make_row, on_activate):
+    def __init__(self, row_h: int, make_row, on_activate, height_of=None, selectable=None):
+        """height_of(item) -> row height (default row_h); selectable(item) -> False for rows a click must not
+        select (section headers)."""
         super().__init__()
         self.row_h = row_h
         self._make_row = make_row
         self._on_activate = on_activate
+        self._height_of = height_of or (lambda _item: row_h)
+        self.selectable = selectable or (lambda _item: True)
+        self._tops = []
         self.items = []
         self._keys = []
         self._rows: dict[str, _Row] = {}
@@ -57,31 +62,35 @@ class ResultList(Gtk.Widget):
         keys = []
         fresh = not self._rows
         appearing = 0
-        for i, item in enumerate(items):
+        ty = 0
+        tops = []
+        for item in items:
             key = item.key
             while key in rows:  # keep keys unique
                 key += "+"
             keys.append(key)
-            ty = i * self.row_h
+            h = self._height_of(item)
+            tops.append(ty)
             r = self._rows.get(key) or self._revive(key)
             if r is None:
                 # New row: slides up a little into its place; a fresh list cascades in row by row.
-                r = _Row(key, item, self._build(key, item), ty + (6 if fresh else self.row_h * 0.35), ty,
-                         0.0, 1.0, appearing * STAGGER)
+                r = _Row(key, item, self._build(key, item), ty + (6 if fresh else h * 0.35), ty,
+                         0.0, 1.0, appearing * STAGGER, h)
                 appearing += 1
             else:
                 if _signature(r.item) != _signature(item):
                     r.widget.unparent()
                     r.widget = self._build(key, item)
                     r.op = min(r.op, 0.35)  # quick cross-fade of the changed content (pending -> result)
-                r.item, r.ty, r.top = item, ty, 1.0
+                r.item, r.ty, r.top, r.h = item, ty, 1.0, h
             rows[key] = r
+            ty += h
         for key, r in self._rows.items():
             if key not in rows:
                 r.top, r.delay = 0.0, 0.0
                 self._dying.append(r)
-        self._rows, self._keys, self.items = rows, keys, list(items)
-        self._th = len(items) * self.row_h
+        self._rows, self._keys, self.items, self._tops = rows, keys, list(items), tops
+        self._th = ty
         self.selected = min(select, len(items) - 1) if items else -1
         self._mark_selected()
         self._kick()
@@ -100,6 +109,11 @@ class ResultList(Gtk.Widget):
     def insert(self, index: int, item, select: bool = True):
         items = self.items[:index] + [item] + self.items[index:]
         self.set_items(items, index if select else (self.selected + (1 if self.selected >= index else 0)))
+
+    def row_span(self, index: int) -> tuple[int, int]:
+        """(top, bottom) of row index in the list's coordinates (target positions)."""
+        top = self._tops[index]
+        return top, top + self._height_of(self.items[index])
 
     def selected_item(self):
         if 0 <= self.selected < len(self.items):
@@ -129,6 +143,8 @@ class ResultList(Gtk.Widget):
 
     def _clicked(self, key):
         if key in self._keys:
+            if not self.selectable(self.items[self._keys.index(key)]):
+                return
             self.select(self._keys.index(key))
             self._on_activate(self.selected_item())
 
@@ -211,7 +227,7 @@ class ResultList(Gtk.Widget):
     def do_size_allocate(self, width, height, baseline):
         for r in self._all_rows():
             t = Gsk.Transform.new().translate(Graphene.Point().init(0, r.y))
-            r.widget.allocate(width, self.row_h, -1, t)
+            r.widget.allocate(width, r.h, -1, t)
 
     def do_snapshot(self, snapshot):
         for r in self._all_rows():

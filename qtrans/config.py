@@ -12,7 +12,8 @@ DEFAULTS = {
     "prefill": {"enabled": True, "max_chars": 80, "max_paragraph_chars": 2000},
     "mt": {"enabled": True, "debounce_ms": 120},
     "paragraph": {"auto_llm": True},
-    "log_misses": False,
+    "history": {"enabled": True},
+    "diacritics": {"enabled": True},
 }
 
 

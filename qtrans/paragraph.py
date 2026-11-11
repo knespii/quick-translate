@@ -64,10 +64,11 @@ def clean_selection(text: str) -> str:
             # Hard-wrapped lines join with a space; list items keep their own line.
             out += ("\n" if _LIST_ITEM.match(ln) else " ") + ln
         paragraphs.append(re.sub(r"[ \t]+", " ", out))
-    return _cap("\n\n".join(paragraphs))
+    return cap("\n\n".join(paragraphs))
 
 
-def _cap(text: str, limit: int = MAX_PARAGRAPH_CHARS) -> str:
+def cap(text: str, limit: int = MAX_PARAGRAPH_CHARS) -> str:
+    """text cut to at most limit characters, at a sentence end if there is one in the second half."""
     if len(text) <= limit:
         return text
     head = text[:limit]

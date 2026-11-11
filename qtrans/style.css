@@ -75,7 +75,7 @@ popover.qt-word-pop {
 popover.qt-word-pop > contents {
   padding: 8px 6px 6px 6px;
   border-radius: 14px;
-  background-color: color-mix(in srgb, var(--window-bg-color) 94%, transparent);
+  background-color: color-mix(in srgb, var(--window-bg-color) 98%, transparent);
   border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
   min-width: 0;
@@ -96,3 +96,9 @@ popover.qt-word-pop > contents {
   background-color: color-mix(in srgb, var(--accent-bg-color) 22%, transparent);
 }
 .qt-word-pop-empty { opacity: 0.6; margin: 0 12px; }
+/* History (Tab): section headers between the rows. */
+.qt-row-head, .qt-row-head:hover { background: none; padding-bottom: 0; }
+.qt-section { font-size: 11px; font-weight: bold; opacity: 0.55; }
+/* "Podle smyslu věty": the LLM's options, one per line (word and a short reason). */
+.qt-ctx-option { margin: 0 4px; }
+.qt-ctx-option label { font-size: 13px; }

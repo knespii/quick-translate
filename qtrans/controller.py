@@ -76,7 +76,7 @@ class Controller:
         return self.gen
 
     def _deliver(self, gen, callback, payload):
-        if gen == self.gen:
+        if gen is None or gen == self.gen:
             callback(payload)
         return GLib.SOURCE_REMOVE
 
@@ -96,9 +96,10 @@ class Controller:
         self._timer = GLib.timeout_add(self.debounce_ms, fire)
         return True
 
-    def run_io(self, fn, callback) -> None:
-        """Run fn() in the IO pool; callback(result_or_exception) on the main loop if still current."""
-        gen = self.gen
+    def run_io(self, fn, callback, always: bool = False) -> None:
+        """Run fn() in the IO pool; callback(result_or_exception) on the main loop if still current (always: also
+        when not, for a callback that must know the work has ended)."""
+        gen = None if always else self.gen
 
         def done(fut):
             try:

@@ -9,7 +9,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from dictbuild import parse_cswikt, parse_freq, parse_gnu, parse_kaikki, parse_wordnet
+from dictbuild import parse_cswikt, parse_freq, parse_gnu, parse_kaikki, parse_wordnet, undiac
 from dictbuild.model import (CS, EN, F_INFLECTED, F_VULGAR, K_CORE, K_FORM, K_VARIANT, P_INFLECTED, P_VULGAR,
                              Collection)
 from qtrans.normalize import FUNCTION_WORDS, NORM_VERSION, core_tokens, deletions, norm
@@ -31,6 +31,10 @@ CREATE VIRTUAL TABLE def_en USING fts5(heads, gloss, tokenize='porter unicode61 
 CREATE VIRTUAL TABLE def_cs USING fts5(heads, gloss, lem, tokenize='unicode61 remove_diacritics 2');
 CREATE TABLE def_target(src INTEGER NOT NULL, def_id INTEGER NOT NULL, ord INTEGER NOT NULL, term_id INTEGER NOT NULL,
   PRIMARY KEY(src, def_id, ord)) WITHOUT ROWID;
+CREATE TABLE undiac(key TEXT PRIMARY KEY, word TEXT NOT NULL, zipf REAL NOT NULL, margin REAL NOT NULL,
+  alt TEXT, plain REAL NOT NULL DEFAULT 0) WITHOUT ROWID;  -- folded word -> most frequent Czech spelling,
+  -- alt = the second best, plain = zipf of the word spelled without diacritics (0: not a word)
+CREATE TABLE undiac_suffix(suffix TEXT PRIMARY KEY, ending TEXT NOT NULL) WITHOUT ROWID;  -- 'ych' -> 'ých'
 """
 INDEXES = """
 CREATE INDEX term_key ON term(key, lang);
@@ -345,6 +349,13 @@ def main() -> int:
                 aspect_rows.add((ia, ib))
                 aspect_rows.add((ib, ia))
 
+    # --- diacritics restoration ('styska' -> 'stýská') -----------------------------------------
+    cs_dict_words = [t["text"] for (lang, _i), t in col.terms.items() if lang == CS and " " not in t["text"]]
+    cs_dict_words += [f for lang, f, *_ in col.forms if lang == CS and " " not in f]
+    spellings = undiac.best_spellings(cs_word, cs_dict_words)
+    undiac_rows, suffix_rows = undiac.rows(spellings), undiac.suffix_rows(spellings)
+    log(f"undiac rows: {len(undiac_rows)}, suffix rules: {len(suffix_rows)}")
+
     # --- write -----------------------------------------------------------------------------------
     DB.parent.mkdir(parents=True, exist_ok=True)
     work = DB.with_name("dict.sqlite.build")
@@ -366,6 +377,8 @@ def main() -> int:
     con.executemany("INSERT INTO def_en(rowid, heads, gloss) VALUES (?,?,?)", def_en_rows)
     con.executemany("INSERT INTO def_cs(rowid, heads, gloss, lem) VALUES (?,?,?,?)", def_cs_rows)
     con.executemany("INSERT INTO def_target VALUES (?,?,?,?)", sorted(set(target_rows)))
+    con.executemany("INSERT INTO undiac VALUES (?,?,?,?,?,?)", undiac_rows)
+    con.executemany("INSERT INTO undiac_suffix VALUES (?,?)", suffix_rows)
     con.execute("INSERT INTO def_en(def_en) VALUES('optimize')")
     con.execute("INSERT INTO def_cs(def_cs) VALUES('optimize')")
     con.executescript(INDEXES)
@@ -384,7 +397,8 @@ def main() -> int:
     work.unlink()
     os.replace(tmp, DB)
     log(f"wrote {DB} ({DB.stat().st_size / 1e6:.1f} MB): terms {len(term_rows)}, pairs {len(col.pairs)}, "
-        f"forms {len(form_rows)}, phrases {len(fts_rows)}, typo keys {len(del_rows)}, aspect {len(aspect_rows)}")
+        f"forms {len(form_rows)}, phrases {len(fts_rows)}, typo keys {len(del_rows)}, aspect {len(aspect_rows)}, "
+        f"undiac {len(undiac_rows)}")
     return 0
 
 

@@ -400,7 +400,7 @@ export class PopupGlass {
     }
 
     /**
-     * Fade and grow in, or out, as the app animates its content (app.py OPEN_MS, CLOSE_MS).
+     * Fade and grow in, or out, as the app animates its content (popup.py OPEN_MS, CLOSE_MS).
      *
      * @param {boolean} show
      * @param {number} duration - ms
