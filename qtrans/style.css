@@ -102,3 +102,10 @@ popover.qt-word-pop > contents {
 /* "Podle smyslu věty": the LLM's options, one per line (word and a short reason). */
 .qt-ctx-option { margin: 0 4px; }
 .qt-ctx-option label { font-size: 13px; }
+/* Rewrite mode (Super+R): the tones, the chosen one marked like a selected row. */
+.qt-tones { padding: 8px 12px 0 12px; }
+.qt-tone { font-size: 13px; padding: 3px 12px; }
+.qt-tone.selected {
+  background-color: color-mix(in srgb, var(--accent-bg-color) 32%, transparent);
+  font-weight: bold;
+}

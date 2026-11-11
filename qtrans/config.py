@@ -13,6 +13,7 @@ DEFAULTS = {
     "mt": {"enabled": True, "debounce_ms": 120},
     "paragraph": {"auto_llm": True},
     "history": {"enabled": True},
+    "rewrite": {"enabled": True, "model": "", "max_chars": 8000, "num_ctx": 8192},
     "diacritics": {"enabled": True},
 }
 

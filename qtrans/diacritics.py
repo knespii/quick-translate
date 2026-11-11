@@ -87,6 +87,13 @@ class Diacritizer:
     def _en_zipf(self, key: str) -> float:
         return self._cached(self._en, key, lambda k: self._lang_zipf(k, 1))
 
+    def is_word(self, word: str, lang: str = "cs") -> bool:
+        """Does the dictionary or the corpus know this word (any form, diacritics ignored) in lang?"""
+        key = norm(word)
+        if not self.ok or not key:
+            return False
+        return bool(self._cs_zipf(key) if lang == "cs" else self._en_zipf(key))
+
     def _guess(self, key: str) -> str:
         """A word neither dictionary nor corpus knows: 'ne' + a known word ('neprepise' -> 'nepřepíše'),
         else a regular ending ('kachnovitych' -> 'kachnovitých'); the key itself when nothing fits."""

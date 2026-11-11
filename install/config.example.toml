@@ -25,6 +25,13 @@ enabled = true      # recently translated words (Tab); the history stays on this
 enabled = true      # Czech typed without diacritics gets them back: each finished word is corrected in the input
                     # ('mas ' -> 'máš ', Ctrl+Z undoes it); the translators get the text with diacritics
 
+[rewrite]
+enabled = true      # Super+R: rewrite the selected text in another tone with the [llm] ollama (local: nothing leaves
+                    # the computer unless [llm] url points elsewhere)
+model = ""          # empty: the [llm] model; a bigger one writes better Czech if your GPU has room for it
+max_chars = 8000    # longer texts are refused with a note (about a long e-mail)
+num_ctx = 8192      # the model's context in tokens (all its requests): the text and its rewrite must fit
+
 [online]
 enabled = true      # Alt+L asks LINDAT (MFF UK); nothing is sent without Alt+L
 timeout = 4

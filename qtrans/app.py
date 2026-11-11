@@ -25,6 +25,7 @@ from qtrans.describe import DescribeMode  # noqa: E402
 from qtrans.history import History  # noqa: E402
 from qtrans.items import Item, history_item  # noqa: E402
 from qtrans.paragraph_mode import ParagraphMode  # noqa: E402
+from qtrans.rewrite_mode import RewriteMode  # noqa: E402
 from qtrans.paths import DB, REPO  # noqa: E402
 from qtrans.popup import CLOSE_MS, Popup  # noqa: E402
 from qtrans.wordmode import WordMode  # noqa: E402
@@ -37,7 +38,7 @@ DEBUG = os.environ.get("QT_DEBUG") == "1"
 log = log_mod.setup()
 
 
-class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
+class App(WordMode, ParagraphMode, RewriteMode, DescribeMode, Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.ALLOW_REPLACEMENT)
         self.cfg = config_mod.load()
@@ -57,6 +58,7 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
         self._init_words()
         self._init_paragraph()
         self._init_describe()
+        self._init_rewrite()
 
     # --- lifecycle -------------------------------------------------------------------------
     def do_startup(self):
@@ -96,6 +98,8 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
         self._add_action("quit", lambda *_: self.quit())
         # The GNOME extension starts the app with it after login: startup readies everything (_load_backends).
         self._add_action("preload", lambda *_: None)
+        # Super+R: rewrite the selected text in another tone.
+        self._add_action("rewrite", lambda *_: self.start_rewrite())
         # The GNOME extension lays Liquid Glass under the window: then the app draws no background.
         self._add_action("glass", lambda _a, p: self.win.set_glass(p.get_boolean()), "b")
         # The GNOME extension hands over the text selected since the popup was last shown ('' for none).
@@ -179,7 +183,11 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
         from qtrans.llm import LLM
         c = self.cfg["llm"]
         if self._llm_obj is None:
-            self._llm_obj = LLM(c["url"], c["model"], c["keep_alive"], c["timeout"])
+            # (The rewrite's context for every request: ollama reloads the model when it changes.)
+            rw = self.cfg["rewrite"]
+            same = rw["enabled"] and rw["model"] in ("", c["model"])
+            self._llm_obj = LLM(c["url"], c["model"], c["keep_alive"], c["timeout"],
+                                num_ctx=rw["num_ctx"] if same else None)
         return self._llm_obj
 
     def do_activate(self):
@@ -260,6 +268,7 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
             return
         self._closing = False
         self.win.set_visible(False)
+        self._end_rewrite()
         # Every opening starts empty (or with the selected text): nothing left from last time.
         self.win.set_text("")
         log.info("hidden")
@@ -278,7 +287,7 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
     def _prefill_from_shell(self, text: str):
         log.debug("shell prefill %d chars (visible %s)", len(text), self.win.get_visible())
         self._shell_prefill = True
-        if not self.cfg["prefill"]["enabled"] or not self.win.get_visible():
+        if not (self.rewriting or self.cfg["prefill"]["enabled"]) or not self.win.get_visible():
             return
         t = self._prefill_text(text)
         if t and not self._typed_since_open():
@@ -289,7 +298,7 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
 
     def _prefill(self):
         win = self.win
-        if not self.cfg["prefill"]["enabled"] or self._shell_prefill:
+        if not (self.rewriting or self.cfg["prefill"]["enabled"]) or self._shell_prefill:
             win.select_all()  # the extension sends the selection itself (_prefill_from_shell)
             return
         clip = self.win.get_display().get_primary_clipboard()
@@ -334,7 +343,12 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
 
     def _prefill_text(self, text) -> str:
         """Short single-line text as before (a word or phrase); a longer or multi-line selection only when it
-        is a paragraph, cleaned (hard-wrapped lines joined) and capped at max_paragraph_chars."""
+        is a paragraph, cleaned (hard-wrapped lines joined) and capped at max_paragraph_chars. To rewrite: any
+        text as it is (an e-mail keeps its lines), up to [rewrite] max_chars."""
+        if self.rewriting:
+            # As it is (a selected line's newline goes back with the rewrite); too long: shown with a note.
+            t = text or ""
+            return t if t.strip() and len(t) <= 4 * self.cfg["rewrite"]["max_chars"] else ""
         pf = self.cfg["prefill"]
         t = (text or "").strip()
         if not t or ("\n" not in t and len(t) <= pf["max_chars"]):
@@ -356,6 +370,10 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
 
     def run_query(self, raw: str):
         """Every change of the input: pick the mode (paragraph, '?' description, words) and start it."""
+        if self.rewriting:  # (no bump: the running rewrite goes on while the text stays the same)
+            self.win.set_mode(True)
+            self._run_rewrite(raw)
+            return
         self.ctl.bump()
         self._copy_when_ready = False
         self._reset_words()
@@ -390,7 +408,9 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
             self._llm_suggest()
 
     def copy_current(self):
-        if self.win.paragraph and not self.win.history:
+        if self.rewriting:
+            self.rewrite_accept(paste=False)
+        elif self.win.paragraph and not self.win.history:
             self.copy_paragraph()
         else:
             self.copy_item(self.win.selected_item())

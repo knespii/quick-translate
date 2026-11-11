@@ -2,6 +2,8 @@
 
 A Spotlight-like Czech ↔ English translator for GNOME on Wayland. Press **Super+T**, type Czech or English
 (diacritics optional, inflected forms welcome: „zapomnel“, „gave up“) and results appear as you type.
+Select your own text and press **Super+R** to rewrite it in another tone (formal, friendly, shorter or just
+corrected); Enter puts the result in place of the selection.
 It works **offline first**: the dictionary, the machine translation and the optional LLM all run on your
 computer. Nothing leaves it unless you press Alt+L.
 
@@ -37,6 +39,10 @@ Quick Translate is licensed under **GPL-2.0-or-later** (see [LICENSE](LICENSE)).
 - **Describe a word** („it is on the tip of my tongue“): `?nástroj na zatloukání hřebíků` finds *kladivo /
   hammer*; Alt+E asks the local LLM, whose Czech suggestions are verified against the dictionary.
 - **Word history on Tab:** the last three Czech and three English words you translated.
+- **Rewrite the tone (Super+R).** Select an e-mail or a message in any app, press Super+R and pick a tone:
+  *Formální* (formal, professional), *Přátelský* (friendly), *Stručnější* (shorter) or *Gramatika* (only
+  mistakes and diacritics corrected). The local LLM writes it as you watch; Enter replaces the selected text
+  with it. See [Rewriting](#rewriting-superr).
 - **GNOME Shell extension** (optional, recommended): puts the popup at the top of the screen like Spotlight,
   gives it reliable focus, closes it on a click outside and draws **Liquid Glass** under it — frosted glass
   that refracts the wallpaper and windows at its edges (the material of [Atelier](https://github.com/knespii/atelier)).
@@ -88,6 +94,33 @@ The label above the translation says where the shown version comes from and whic
 (e.g. *LLM · gemma3:4b · 2/3*); Enter copies the version that is shown. A word picked from the dictionary is
 inserted in its base form and the LLM then fixes the sentence's grammar (*společné cesta* → *společné cesty*).
 
+### Rewriting (Super+R)
+
+![Rewrite mode: the selected e-mail and its formal version](docs/screenshots/rewrite.png)
+
+| Key | Action |
+|---|---|
+| Alt+← / Alt+→, Alt+1 … Alt+4 | choose the tone (or click it); the last one used is preselected |
+| Enter | put the rewrite in place of the selected text (pasted into the window it came from) |
+| Alt+Enter | only copy the rewrite |
+| Ctrl+↑ / Ctrl+↓ | show the original |
+| Shift+Enter | a new line in the text |
+| Esc | close |
+
+The text is rewritten in its own language (Czech or English) by the local LLM, streamed as it is written:
+a short e-mail takes a few seconds with `gemma3:4b` on a laptop GPU. Each tone's version is kept, so switching
+back is instant. You can also edit the text in the input; it is rewritten again when you stop typing.
+
+Two checks keep the small model honest. *Gramatika* may change only what is wrong: a word the dictionary knows
+is put back as you wrote it, unless only its diacritics or case changed. And if a rewrite loses a day of the
+week, a number, a link or an e-mail address of the original, the header says so (*⚠ zkontroluj: úterý*).
+
+Pasting needs the GNOME extension: it remembers the window that had the focus when you pressed Super+R and,
+once it has the focus back, presses Ctrl+V there (Ctrl+Shift+V in a terminal; a terminal gets only a
+one-line rewrite, without a newline, as a shell would run every line). The selection is still selected
+in most apps, so the paste replaces it. Without the extension, Enter copies and you paste yourself. The rewrite
+also stays in the clipboard.
+
 ### Recent words (Tab)
 
 ![The Tab menu: the last three Czech and three English words](docs/screenshots/history.png)
@@ -129,7 +162,7 @@ python3 -m venv --system-site-packages .venv
 .venv/bin/python -m dictbuild.fetch          # dictionaries and frequency lists (~100 MB) → data/raw
 .venv/bin/python -m dictbuild.build_db       # data/dict.sqlite (~107 MB, ~40 s)
 
-# 4. D-Bus service, .desktop file and the Super+T shortcut
+# 4. D-Bus service, .desktop file and the Super+T (translate) and Super+R (rewrite) shortcuts
 install/install.sh --phase1
 ```
 
@@ -177,6 +210,7 @@ the in-context suggestions are simply not shown.
   *bug* for Czech „brouku“ (a term of endearment) offers *beetle, love, honey, sweetheart…* from the dictionary
   and, a few seconds later, *dear, sweetheart* from the LLM with a short reason.
 - **A word you cannot recall:** type `?` and its description; Alt+E asks the LLM.
+- **Your own text in another tone:** select it, Super+R, pick a tone, Enter. See [Rewriting](#rewriting-superr).
 - **Second opinion:** Alt+L asks LINDAT online.
 
 ## Configuration
@@ -194,6 +228,7 @@ app reads it on start (`gapplication action cz.que.QuickTranslate quit` restarts
 | `[diacritics]` | `enabled` (automatic diacritics) |
 | `[online]` | `enabled` (Alt+L to LINDAT), `timeout` |
 | `[llm]` | `model`, `url` (ollama, default `http://127.0.0.1:11434`), `keep_alive`, `timeout` |
+| `[rewrite]` | `enabled` (Super+R), `model` (empty = the `[llm]` model), `max_chars` (longer texts are refused, default 8000), `num_ctx` (the model's context in tokens, default 8192) |
 
 ## Privacy and use at work
 
@@ -210,19 +245,24 @@ Quick Translate is built to be usable on a work computer:
   - a Czech paragraph is polished automatically after its machine translation (`[paragraph] auto_llm`);
   - clicking a word of a paragraph translation asks for in-context alternatives, and picking a dictionary
     alternative asks it to fix the grammar of that sentence;
-  - typing a lone `?` preloads the model (no text is sent).
+  - typing a lone `?` preloads the model (no text is sent);
+  - Super+R sends the selected text to the LLM to rewrite it (only after the shortcut, never on its own).
 
   Without ollama running none of this happens and everything else works. To keep text away from the LLM even
   when ollama runs, set `[paragraph] auto_llm = false` and point `[llm] url` to an address where nothing
   listens (e.g. `http://127.0.0.1:9`); then Alt+E simply reports that the LLM is unavailable.
-- **History and logs stay on your computer** in `~/.local/state/quick-translate/` (`history.json`, `qt.log`).
+- **History and logs stay on your computer** in `~/.local/state/quick-translate/` (`history.json`, `qt.log`, and
+  `rewrite.json` with the last rewrite tone, no text).
   The normal (INFO) log contains no translated text, only lengths and counts, and is rotated at 1 MB (the log
   itself cannot be switched off). Turn the history off with `[history] enabled = false`, delete it with
   `rm ~/.local/state/quick-translate/history.json`.
 - **Debug D-Bus actions** that let a script type into the app or take a snapshot of it exist only when the app
   was started with `QT_DEBUG=1` (developers, see below). Without it the app exposes only `toggle`, `show`,
-  `hide`, `quit`, `glass`, `prefill` and `preload` (used by the shortcut and the extension; `preload` does
-  nothing, it only starts the app).
+  `hide`, `quit`, `glass`, `prefill`, `preload` and `rewrite` (used by the shortcuts and the extension;
+  `preload` does nothing, it only starts the app).
+- **Pasting a rewrite** is the only time the extension presses keys for you: Ctrl+V (Ctrl+Shift+V in a
+  terminal) once, into the window the text was selected in, right after you press Enter in rewrite mode. If
+  that window is gone or does not get the focus back within 1.5 s, nothing is pasted.
 - **No telemetry**, no update checks, no analytics. The dictionary data is downloaded once from the sources
   below when you build it; the app itself does not download anything.
 
@@ -245,7 +285,7 @@ enabled = false
 ## Uninstall
 
 ```bash
-install/install.sh --uninstall                                   # service, .desktop file, Super+T (other shortcuts stay)
+install/install.sh --uninstall                                   # service, .desktop file, Super+T and Super+R
 gnome-extensions disable quick-translate@que.cz
 rm ~/.local/share/gnome-shell/extensions/quick-translate@que.cz  # the symlink
 rm -rf ~/.config/quick-translate ~/.local/state/quick-translate  # config, history and logs
@@ -304,6 +344,7 @@ qtrans/          the app
   wordmode.py      dictionary, machine and online rows, Alt+←, history
   paragraph_mode.py paragraph mode (translation versions, word fixes)
   describe.py      ?description and LLM suggestions
+  rewrite_mode.py  rewrite mode (Super+R); rewrite.py: tones, prompts, grammar and fact checks
   items.py, resultlist.py  result rows and their animation
   autodiac.py, diacritics.py  diacritics while typing
   history.py       word history;  sentences.py  the sentence around a word
@@ -311,7 +352,7 @@ qtrans/          the app
   mt.py            offline translation (Bergamot);  online.py  LINDAT;  llm.py  ollama
   controller.py    async work and generations;  config.py, paths.py, log.py, cli.py
 dictbuild/       downloads the sources and builds data/dict.sqlite (fetch.py, fetch_models.py, build_db.py, parse_*.py)
-extension/       GNOME Shell extension quick-translate@que.cz (placement, focus, Liquid Glass)
+extension/       GNOME Shell extension quick-translate@que.cz (placement, focus, Liquid Glass, pasting a rewrite)
 install/         installer, D-Bus service, .desktop file, config.example.toml
 tests/           pytest tests, golden.tsv, benchmarks, nested_shell.sh
 bin/             launcher
@@ -345,6 +386,10 @@ Online services used only on request: [LINDAT Translation](https://lindat.mff.cu
 - Without the extension (or before logging in again) the window is centered, opaque and briefly in Alt+Tab;
   a click on the desktop does not close it (a click into another window, Esc and Super+T do).
 - Contractions („you're right“) are not split by the dictionary; the machine translation row translates them.
+- Rewriting uses a small local model: its Czech is good but not flawless (an odd word now and then), so read the
+  result before sending it. A bigger model (`[rewrite] model`) writes better if your GPU has room for it.
+- Pasting a rewrite relies on the app keeping the selection when it gets the focus back; where it does not, the
+  rewrite is pasted at the cursor.
 
 ## Credits
 

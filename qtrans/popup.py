@@ -15,6 +15,7 @@ from gi.repository import Adw, Gdk, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E40
 
 from qtrans.autodiac import has_czech_letter, written_with_diacritics  # noqa: E402
 from qtrans.items import Item, esc  # noqa: E402
+from qtrans import rewrite as rewrite_tones  # noqa: E402
 from qtrans.resultlist import TAU_MOVE, ResultList  # noqa: E402
 
 ROW_H = 54
@@ -27,6 +28,10 @@ FOOTER = ("<b>↵</b> kopírovat", "<b>⇧↵</b> heslo", "<b>Alt+1…9</b> n-t�
           "<b>?</b>popis", "<b>Tab</b> historie", "<b>Esc</b>")
 FOOTER_PARA = ("<b>↵</b> kopírovat překlad", "<b>⇧↵</b> nový řádek", "<b>⌃↑↓</b> originál", "<b>Alt+L</b> online",
                "<b>Alt+E</b> LLM", "<b>Esc</b>")
+FOOTER_REWRITE = ("<b>↵</b> nahradit", "<b>Alt+↵</b> kopírovat", "<b>Alt+←→</b> tón", "<b>⌃↑↓</b> originál",
+                  "<b>⇧↵</b> nový řádek", "<b>Esc</b>")
+PLACEHOLDER = "Přelož… česky nebo anglicky"
+PLACEHOLDER_REWRITE = "Přepiš… označ text, nebo ho sem napiš"
 FOOTER_HISTORY = ("<b>↑↓</b> výběr", "<b>↵</b> kopírovat", "<b>⇧↵</b> heslo", "<b>Alt+1…9</b> n-tý",
                   "<b>Tab</b> zpět", "<b>Esc</b>")
 WARM_W, WARM_H = 320, 200  # one panel of the warm-up drawing (Popup._warm_up_node)
@@ -128,7 +133,7 @@ class Popup(Adw.ApplicationWindow):
                                                  vscrollbar_policy=Gtk.PolicyType.AUTOMATIC)
         self.input_scroller.set_propagate_natural_height(True)
         self.input_scroller.set_child(self.input)
-        self.placeholder = Gtk.Label(label="Přelož… česky nebo anglicky", halign=Gtk.Align.START,
+        self.placeholder = Gtk.Label(label=PLACEHOLDER, halign=Gtk.Align.START,
                                      valign=Gtk.Align.START, can_target=False)
         self.placeholder.add_css_class("qt-placeholder")
         overlay = Gtk.Overlay(child=self.input_scroller)
@@ -177,7 +182,7 @@ class Popup(Adw.ApplicationWindow):
         self.para_spinner = Gtk.Spinner(opacity=0.0)
         self.para_note = Gtk.Label(xalign=0, hexpand=True, ellipsize=Pango.EllipsizeMode.END)
         self.para_note.add_css_class("qt-label")
-        hint = Gtk.Label(label="klik na slovo = alternativy · Ctrl+↑/↓ originál")
+        hint = self.para_hint = Gtk.Label(label="klik na slovo = alternativy · Ctrl+↑/↓ originál")
         hint.add_css_class("qt-para-hint")
         self.para_head = Gtk.Box(spacing=8)
         self.para_head.add_css_class("qt-para-head")
@@ -197,7 +202,22 @@ class Popup(Adw.ApplicationWindow):
         clicks.connect("event", self._on_para_event)
         self.para_text.add_controller(clicks)
         self._press = None
+        # Rewrite mode (Super+R): the tones above the result, one button each (Alt+←/→, Alt+1…4 or a click).
+        self.rewrite = False
+        self.tone_bar = Gtk.Box(spacing=4, visible=False)
+        self.tone_bar.add_css_class("qt-tones")
+        self.tone_buttons = {}
+        for n, tone in enumerate(rewrite_tones.TONES):
+            b = Gtk.Button(label=tone.label, focus_on_click=False, can_focus=False,
+                           tooltip_text=f"Alt+{n + 1}")
+            b.add_css_class("flat")
+            b.add_css_class("qt-chip")
+            b.add_css_class("qt-tone")
+            b.connect("clicked", lambda _b, k=tone.key: self.app_ref.set_rewrite_tone(k))
+            self.tone_bar.append(b)
+            self.tone_buttons[tone.key] = b
         page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        page.append(self.tone_bar)
         page.append(self.para_head)
         page.append(self.para_scroller)
         # Not autohide: the keyboard stays in the input (Esc, Enter, Ctrl+Z keep working); the buttons do not
@@ -482,6 +502,25 @@ class Popup(Adw.ApplicationWindow):
         if para:
             self.sep.set_visible(True)
 
+    def set_rewrite(self, on: bool, tone: str):
+        """Rewrite mode (Super+R) on or off: the tones above the paragraph block, its own footer and hint."""
+        self.set_tone(tone)
+        if on == self.rewrite:
+            return
+        self.rewrite = on
+        self.tone_bar.set_visible(on)
+        self.para_hint.set_visible(not on)  # (no word alternatives for a rewrite)
+        self.placeholder.set_label(PLACEHOLDER_REWRITE if on else PLACEHOLDER)
+        self.hide_history()
+        if on:
+            self.paragraph = False  # (set_mode shows the block afresh)
+            self.set_mode(True)
+        self._update_footer()
+
+    def set_tone(self, key: str):
+        for k, b in self.tone_buttons.items():
+            (b.add_css_class if k == key else b.remove_css_class)("selected")
+
     def set_back(self, on: bool):
         """Is there something for Alt+← to go back to (a row added by Alt+L/E, another paragraph version)?"""
         if on != self._back:
@@ -491,6 +530,8 @@ class Popup(Adw.ApplicationWindow):
     def _update_footer(self):
         if self.history:
             parts = FOOTER_HISTORY
+        elif self.rewrite:
+            parts = FOOTER_REWRITE
         else:
             parts = FOOTER_PARA if self.paragraph else FOOTER
             if self._back:
@@ -524,10 +565,14 @@ class Popup(Adw.ApplicationWindow):
 
     def show_paragraph(self, text: str, source: str, note: str, busy: bool, dim: bool, original: bool):
         self.para_scroller.set_max_content_height(self._para_max_height())
-        if self.para_text.get_text() != text:
-            self.hide_word_pop()
+        old = self.para_text.get_text()
+        if old != text:
+            grew = bool(old) and text.startswith(old)  # (a streamed text: keep the place)
+            if not grew:
+                self.hide_word_pop()
             self.para_text.set_text(text)
-            self.para_scroller.get_vadjustment().set_value(0)
+            if not grew:
+                self.para_scroller.get_vadjustment().set_value(0)
         for cls, on in (("qt-dim", dim), ("qt-original", original)):
             (self.para_text.add_css_class if on else self.para_text.remove_css_class)(cls)
         self.para_source.set_text(source)
@@ -582,7 +627,7 @@ class Popup(Adw.ApplicationWindow):
 
     def click_para(self, x: float, y: float):
         """A click at (x, y) in the paragraph text: pick the word there, unless text is selected."""
-        if self.para_text.get_selection_bounds()[0]:
+        if self.rewrite or self.para_text.get_selection_bounds()[0]:
             return
         layout = self.para_text.get_layout()
         ox, oy = self.para_text.get_layout_offsets()
@@ -809,6 +854,8 @@ class Popup(Adw.ApplicationWindow):
         up_down = (Gdk.KEY_Down, Gdk.KEY_KP_Down, Gdk.KEY_Up, Gdk.KEY_KP_Up)
         left_right = {Gdk.KEY_Left: -1, Gdk.KEY_KP_Left: -1, Gdk.KEY_Right: 1, Gdk.KEY_KP_Right: 1}
         enter = (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter)
+        if self.rewrite:
+            return self._on_rewrite_key(keyval, ctrl, shift, alt, up_down, left_right, enter)
         if self.history and alt and (keyval in left_right or keyval in (Gdk.KEY_l, Gdk.KEY_L, Gdk.KEY_e, Gdk.KEY_E)):
             self.hide_history()  # these act on the results underneath
         if keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab, Gdk.KEY_KP_Tab) and not (ctrl or alt):
@@ -856,6 +903,28 @@ class Popup(Adw.ApplicationWindow):
             app.copy_nth(keyval - Gdk.KEY_1)
         else:
             return False
+        return True
+
+    def _on_rewrite_key(self, keyval, ctrl, shift, alt, up_down, left_right, enter) -> bool:
+        app = self.app_ref
+        if keyval == Gdk.KEY_Escape:
+            app.hide_popup()
+        elif keyval in enter and shift:
+            self.insert_newline()
+        elif keyval in enter:
+            app.rewrite_accept(paste=not alt)
+        elif alt and not ctrl and keyval in left_right:
+            app.step_rewrite_tone(left_right[keyval])
+        elif alt and not ctrl and Gdk.KEY_1 <= keyval < Gdk.KEY_1 + len(rewrite_tones.TONES):
+            app.set_rewrite_tone(rewrite_tones.TONES[keyval - Gdk.KEY_1].key)
+        elif ctrl and keyval in up_down:
+            app.toggle_rewrite_original()
+        elif keyval in (Gdk.KEY_Page_Down, Gdk.KEY_Page_Up):
+            self.scroll_para(1 if keyval == Gdk.KEY_Page_Down else -1)
+        elif keyval in (Gdk.KEY_Tab, Gdk.KEY_ISO_Left_Tab, Gdk.KEY_KP_Tab) and not (ctrl or alt):
+            pass  # (no history here; the input takes no tabs)
+        else:
+            return False  # typing, the cursor, Ctrl+Z: the input's
         return True
 
     # --- debug snapshot --------------------------------------------------------------------------

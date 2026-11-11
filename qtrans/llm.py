@@ -2,6 +2,7 @@
 
 Every Czech word it returns is checked against the dictionary by the caller; the LLM never has the last word.
 """
+import http.client
 import json
 import re
 import urllib.error
@@ -91,12 +92,20 @@ class LLMError(Exception):
 
 
 class LLM:
-    def __init__(self, url: str, model: str, keep_alive: str = "10m", timeout: float = 60):
+    def __init__(self, url: str, model: str, keep_alive: str = "10m", timeout: float = 60, num_ctx: int | None = None):
+        """num_ctx: the model's context (tokens) for every request – one size, as ollama loads the model again
+        whenever it changes."""
         self.url = url.rstrip("/")
         self.model = model
         self.keep_alive = keep_alive
         self.timeout = timeout
+        self.num_ctx = num_ctx
         self._caps = None
+
+    def _opts(self, **options) -> dict:
+        if self.num_ctx:
+            options["num_ctx"] = self.num_ctx
+        return options
 
     def _post(self, path: str, body: dict, timeout: float) -> dict:
         req = urllib.request.Request(self.url + path, data=json.dumps(body).encode(),
@@ -118,7 +127,8 @@ class LLM:
 
     def prewarm(self) -> None:
         """Load the model into memory so the first real question is fast."""
-        self._post("/api/generate", {"model": self.model, "keep_alive": self.keep_alive}, self.timeout)
+        self._post("/api/generate", {"model": self.model, "keep_alive": self.keep_alive, "options": self._opts()},
+                   self.timeout)
 
     def suggest(self, description: str, hints: list[tuple[str, str]] = ()) -> list[dict]:
         user = f"Description: {description}"
@@ -126,7 +136,7 @@ class LLM:
             user += "\nDictionary candidates (word: translations): " + "; ".join(f"{a}: {b}" for a, b in hints[:15])
         body = {
             "model": self.model, "stream": False, "format": SCHEMA, "keep_alive": self.keep_alive,
-            "options": {"temperature": 0, "num_predict": 700},
+            "options": self._opts(temperature=0, num_predict=700),
             "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}],
         }
         if "thinking" in self.capabilities():
@@ -147,7 +157,7 @@ class LLM:
         body = {
             "model": self.model, "stream": False, "format": TRANSLATE_SCHEMA, "keep_alive": self.keep_alive,
             # JSON escaping and Czech diacritics cost tokens: budget above the input length, capped for safety.
-            "options": {"temperature": 0.2, "num_predict": min(3 * len(text) // 2 + 200, 4096)},
+            "options": self._opts(temperature=0.2, num_predict=min(3 * len(text) // 2 + 200, 4096)),
             "messages": [{"role": "system", "content": TRANSLATE_SYSTEM.format(**names)},
                          {"role": "user", "content": text}],
         }
@@ -198,10 +208,65 @@ class LLM:
             raise LLMError("nečitelná odpověď modelu")
         return out.strip()
 
+    def rewrite_stream(self, messages: list[dict], num_predict: int, on_text, cancelled,
+                       temperature: float = 0.3) -> str:
+        """Stream a free-text answer (/api/chat, stream): on_text(text so far) after every piece; stops (and so
+        stops the model) as soon as cancelled() is true. Returns the whole text ('' when cancelled)."""
+        body = {
+            "model": self.model, "stream": True, "keep_alive": self.keep_alive, "messages": messages,
+            "options": self._opts(temperature=temperature, num_predict=num_predict),
+        }
+        if "thinking" in self.capabilities():
+            body["think"] = False
+        parts = []
+        with self._open("/api/chat", body, self.timeout) as r:
+            try:
+                return self._read_stream(r, parts, on_text, cancelled)
+            except (OSError, ValueError, http.client.HTTPException) as e:  # (a timeout or a dropped connection)
+                raise LLMError("ollama přestala odpovídat") from e
+
+    @staticmethod
+    def _read_stream(r, parts, on_text, cancelled) -> str:
+        for line in r:
+            if cancelled():
+                return ""
+            if not line.strip():
+                continue
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError as e:
+                raise LLMError("nečitelná odpověď modelu") from e
+            if msg.get("error"):
+                raise LLMError(f"ollama: {msg['error']}")
+            piece = (msg.get("message") or {}).get("content") or ""
+            if piece:
+                parts.append(piece)
+                on_text("".join(parts))
+            if msg.get("done"):
+                if msg.get("done_reason") == "length":  # cut off: never take half a text for the whole
+                    raise LLMError("text je na model moc dlouhý, nedopsal ho")
+                break
+        return "".join(parts)
+
+    def _open(self, path: str, body: dict, timeout: float):
+        """A streaming request: the open response, read line by line (NDJSON); close it to stop the model."""
+        req = urllib.request.Request(self.url + path, data=json.dumps(body).encode(),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            return urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                raise LLMError(f"model {self.model} není stažený: ollama pull {self.model}") from e
+            raise LLMError(f"ollama HTTP {e.code}") from e
+        except TimeoutError as e:
+            raise LLMError("ollama neodpověděla včas (model se možná načítá, zkus to znovu)") from e
+        except (urllib.error.URLError, ConnectionError) as e:
+            raise LLMError("ollama neběží (spusť ollama serve)") from e
+
     def _chat(self, system: str, user: str, schema: dict, temperature: float, num_predict: int) -> str:
         body = {
             "model": self.model, "stream": False, "format": schema, "keep_alive": self.keep_alive,
-            "options": {"temperature": temperature, "num_predict": num_predict},
+            "options": self._opts(temperature=temperature, num_predict=num_predict),
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         }
         if "thinking" in self.capabilities():

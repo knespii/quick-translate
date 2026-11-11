@@ -29,6 +29,10 @@ const PRELOAD_S = 3; // after login: ready the glass and the app before the firs
 // Once per Shell session: the extension is disabled on every screen lock and enabled again on unlock, and an
 // app the user quit is not started again then. (QT_NO_PRELOAD=1 in the Shell's environment: never.)
 let preloaded = false;
+// Rewrite mode: Enter pastes the result into the window the text was selected in, with Ctrl+V (Ctrl+Shift+V in
+// a terminal) once that window has the focus back; not at all when it does not get it within this time.
+const PASTE_WAIT_MS = 1500;
+const TERMINAL = /terminal|kgx|ptyxis|console|kitty|alacritty|foot|wezterm|konsole|xterm|tilix|terminator|blackbox|ghostty/i;
 
 function debug(...args) {
     if (DEBUG)
@@ -54,6 +58,22 @@ export default class QuickTranslateExtension extends Extension {
                 const [show, duration] = params.deep_unpack();
                 this._glass?.animate(show, duration);
             });
+        this._source = null;  // the window that had the focus when the popup opened
+        this._paste = null;
+        // (Made now: a virtual device's first key presses are lost while the seat still adds it.)
+        this._keyboard = Clutter.get_default_backend().get_default_seat()
+            .create_virtual_device(Clutter.InputDeviceType.KEYBOARD_DEVICE);
+        this._pasteSignal = Gio.DBus.session.signal_subscribe(APP_ID, 'cz.que.QuickTranslate.Glass', 'Paste',
+            APP_PATH, null, Gio.DBusSignalFlags.NONE, () => this._pasteSoon());
+        // QT_DEBUG only (tests in a nested Shell): key presses for the focused window, e.g.
+        // gdbus emit --session --object-path /cz/que/QuickTranslate --signal cz.que.QuickTranslate.Test.Keys "'ctrl+a'"
+        this._testSignal = DEBUG ? Gio.DBus.session.signal_subscribe(null, 'cz.que.QuickTranslate.Test', 'Keys',
+            APP_PATH, null, Gio.DBusSignalFlags.NONE, (_c, _s, _p, _i, _n, params) =>
+            {
+                const spec = params.deep_unpack()[0];
+                debug('test keys', spec, 'to', global.display.focus_window?.get_title() ?? 'nothing');
+                this._sendKeys(spec.split('+'));
+            }) : 0;
         // The first opening must not pay for one-off work: the glass's shader is compiled now, and the app
         // is started (it stays resident) and readies its window, so Super+T only shows it.
         this._prewarm = null;
@@ -86,6 +106,13 @@ export default class QuickTranslateExtension extends Extension {
         this._prewarm = null;
         global.display.get_selection().disconnectObject(this);
         Gio.DBus.session.signal_unsubscribe(this._animateSignal);
+        Gio.DBus.session.signal_unsubscribe(this._pasteSignal);
+        if (this._testSignal)
+            Gio.DBus.session.signal_unsubscribe(this._testSignal);
+        this._stopPaste();
+        this._keyboard?.run_dispose();
+        this._keyboard = null;
+        this._source = null;
         global.display.disconnectObject(this);
         global.stage.disconnectObject(this);
         this._win?.disconnectObject(this);
@@ -122,6 +149,12 @@ export default class QuickTranslateExtension extends Extension {
     _hook(win) {
         debug('hooked window', win.get_gtk_application_id(), win.get_wm_class());
         this._win = win;
+        // (Before the popup takes the focus: where a rewrite goes back to.)
+        const focused = global.display.focus_window;
+        if (!focused)
+            this._source = null;  // (the desktop: nothing to paste into)
+        else if (!this._isOurs(focused))
+            this._source = focused;
         const actor = win.get_compositor_private();
         if (actor)
             Main.wm.skipNextEffect(actor);
@@ -158,6 +191,10 @@ export default class QuickTranslateExtension extends Extension {
             },
             'unmanaged', () => {
                 global.stage.disconnectObject(this);
+                // A paste is waiting: give the focus back to the window it goes to (Mutter may pick another).
+                const target = this._paste?.target;
+                if (target && global.display.focus_window !== target && target.get_compositor_private())
+                    Main.activateWindow(target);
                 if (this._win === win) {
                     this._win = null;
                     this._glass = null; // (gone with the window's actor)
@@ -181,6 +218,95 @@ export default class QuickTranslateExtension extends Extension {
                     `max ${Math.max(...gaps)} ms, ${gaps.length} frames: ${gaps.join(' ')}`);
             }
         });
+    }
+
+    // --- paste (rewrite mode) ---------------------------------------------------------------------------------
+    _pasteSoon() {
+        const target = this._source;
+        this._stopPaste();
+        if (!target || !target.get_compositor_private()) {
+            debug('paste: no window to paste into');
+            return;
+        }
+        const ids = (target.get_wm_class() ?? '') + ' ' + (target.get_gtk_application_id() ?? '') + ' ' +
+            (target.get_sandboxed_app_id() ?? '');
+        const paste = {target, terminal: TERMINAL.test(ids), timeout: 0, delay: 0, owner: {}};
+        this._paste = paste;
+        const check = () => {
+            if (this._paste !== paste || global.display.focus_window !== target || paste.delay)
+                return;
+            // (A moment for the window to get the keyboard and the clipboard's offer.)
+            paste.delay = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
+                paste.delay = 0;
+                if (this._paste === paste && global.display.focus_window === target) {
+                    if (paste.terminal)
+                        this._pasteIntoTerminal();
+                    else
+                        this._sendPaste(false);
+                }
+                this._stopPaste();
+                return GLib.SOURCE_REMOVE;
+            });
+        };
+        global.display.connectObject('notify::focus-window', check, paste.owner);
+        check();
+        paste.timeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, PASTE_WAIT_MS, () => {
+            paste.timeout = 0;
+            if (this._paste === paste && !paste.delay) {
+                debug('paste: the window did not get the focus back');
+                this._stopPaste();
+            }
+            return GLib.SOURCE_REMOVE;
+        });
+        debug('paste into', ids.trim(), paste.terminal ? '(terminal)' : '');
+    }
+
+    _stopPaste() {
+        const paste = this._paste;
+        this._paste = null;
+        if (!paste)
+            return;
+        global.display.disconnectObject(paste.owner);
+        if (paste.timeout)
+            GLib.source_remove(paste.timeout);
+        if (paste.delay)
+            GLib.source_remove(paste.delay);
+        paste.timeout = paste.delay = 0;
+    }
+
+    // A shell runs every line it gets: one line only, without its newline; more lines stay in the clipboard.
+    _pasteIntoTerminal() {
+        const clipboard = St.Clipboard.get_default();
+        clipboard.get_text(St.ClipboardType.CLIPBOARD, (_c, text) => {
+            const line = (text ?? '').replace(/[\r\n]+$/, '');
+            if (!line || /[\r\n]/.test(line)) {
+                debug('paste: several lines, not into a terminal');
+                return;
+            }
+            if (line !== text)
+                clipboard.set_text(St.ClipboardType.CLIPBOARD, line);
+            this._sendPaste(true);
+        });
+    }
+
+    _sendPaste(terminal) {
+        this._sendKeys(terminal ? ['ctrl', 'shift', 'v'] : ['ctrl', 'v']);
+        debug('pasted', terminal ? 'Ctrl+Shift+V' : 'Ctrl+V');
+    }
+
+    // Press keys together, then release them: ['ctrl', 'v'] (modifiers, then a key name as Clutter.KEY_*).
+    _sendKeys(names) {
+        const mods = {ctrl: Clutter.KEY_Control_L, shift: Clutter.KEY_Shift_L, alt: Clutter.KEY_Alt_L};
+        const keys = names.map(n => mods[n.toLowerCase()] ?? Clutter[`KEY_${n}`]).filter(k => k !== undefined);
+        if (keys.length !== names.length)
+            return;
+        if (!this._keyboard)
+            return;
+        let t = GLib.get_monotonic_time();
+        for (const key of keys)
+            this._keyboard.notify_keyval(t++, key, Clutter.KeyState.PRESSED);
+        for (const key of keys.reverse())
+            this._keyboard.notify_keyval(t++, key, Clutter.KeyState.RELEASED);
     }
 
     _watchClicks(win) {
