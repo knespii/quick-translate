@@ -106,7 +106,7 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
         self._add_action("online", lambda *_: self.online_lookup())
         self._add_action("llm", lambda *_: self.ask_llm())
         self._add_action("copy", lambda *_: self.copy_current())
-        self._add_action("query", lambda _a, p: self.win.set_text(p.get_string(), restore=True), "s")
+        self._add_action("query", lambda _a, p: self._debug_query(p.get_string()), "s")
         self._add_action("snapshot", lambda _a, p: self.win.save_png(p.get_string()), "s")
         self._add_action("pickword", lambda _a, p: self.win.click_para(*self.win.char_point(p.get_int32())), "i")
         self._add_action("pickalt", lambda _a, p: self._debug_pickalt(p.get_int32()), "i")
@@ -420,6 +420,10 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
             b.delete_selection(True, True)
             b.insert_interactive_at_cursor(ch, -1, True)
             b.end_user_action()
+
+    def _debug_query(self, text: str):
+        self._open_db()  # (a query right after startup may come before the dictionary is opened)
+        self.win.set_text(text, restore=True)
 
     def _debug_key(self, spec: str):
         *mods, name = spec.split("+")

@@ -277,6 +277,7 @@ class ParagraphMode:
         self._pick = None
         self.win.hide_word_pop()
         self._render_para()
+        log.info("version %s (%d/%d)", p.current, p.keys().index(p.current) + 1, len(p.keys()))
         return True
 
     # --- word picker -----------------------------------------------------------------------------------
