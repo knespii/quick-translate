@@ -10,7 +10,8 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Graphene", "1.0")
-from gi.repository import Adw, Gdk, GLib, Graphene, Gtk, Pango  # noqa: E402
+gi.require_version("Gsk", "4.0")
+from gi.repository import Adw, Gdk, GLib, Graphene, Gsk, Gtk, Pango  # noqa: E402
 
 from qtrans.autodiac import has_czech_letter, written_with_diacritics  # noqa: E402
 from qtrans.items import Item, esc  # noqa: E402
@@ -28,6 +29,7 @@ FOOTER_PARA = ("<b>↵</b> kopírovat překlad", "<b>⇧↵</b> nový řádek", 
                "<b>Alt+E</b> LLM", "<b>Esc</b>")
 FOOTER_HISTORY = ("<b>↑↓</b> výběr", "<b>↵</b> kopírovat", "<b>⇧↵</b> heslo", "<b>Alt+1…9</b> n-tý",
                   "<b>Tab</b> zpět", "<b>Esc</b>")
+WARM_W, WARM_H = 320, 200  # one panel of the warm-up drawing (Popup._warm_up_node)
 OPEN_MS, CLOSE_MS = 170, 120  # (the GNOME extension's glass uses the same durations)
 MODE_MS = 160          # cross-fade between the word list and the paragraph block
 
@@ -235,10 +237,97 @@ class Popup(Adw.ApplicationWindow):
         # Open/close animation: the whole window (shadow included) fades and grows from 97 %.
         self._anim_value = 1.0
         self._anim = None
-        self.connect("map", lambda *_: self.animate(True))
+        self._open_tick = 0
+        self.connect("map", self._on_map)
+
+    # --- warm-up ----------------------------------------------------------------------------------
+    def warm_up(self):
+        """Do the first opening's one-off work now, while nobody waits (the app starts at login): the window's
+        surface and GPU renderer, the styles and fonts of the layout, and the renderer's shaders and glyphs for
+        the kinds of drawing the popup does. Otherwise the first Super+T stalls for a few hundred ms."""
+        if self.get_realized():
+            return
+        t = time.perf_counter()
+        self.realize()
+        for orientation in (Gtk.Orientation.HORIZONTAL, Gtk.Orientation.VERTICAL):
+            self.measure(orientation, -1)
+        renderer = self.get_renderer()
+        if renderer is not None:
+            # (An explicit, whole-pixel area: GSK aborts the process on an empty texture.)
+            renderer.render_texture(self._warm_up_node(), Graphene.Rect().init(0, 0, 3 * WARM_W, WARM_H))
+        log.info("warm-up in %.0f ms", (time.perf_counter() - t) * 1000)
+
+    def _warm_up_node(self):
+        """A small drawing with what the popup draws: rounded cards, borders, shadows, text in its sizes and
+        styles, opacity and the opening's transform; each unclipped, clipped and clipped round (the renderer
+        has a shader variant for each)."""
+        def rgba(spec):
+            c = Gdk.RGBA()
+            c.parse(spec)
+            return c
+
+        w, h = WARM_W, WARM_H
+        snap = Gtk.Snapshot()
+        for i, clip in enumerate((None, "rect", "rounded")):
+            x = i * w
+            rect = Graphene.Rect().init(x, 0, w, h)
+            card = Gsk.RoundedRect().init_from_rect(Graphene.Rect().init(x + 8, 8, w - 20, h - 20), 16)
+            if clip == "rect":
+                snap.push_clip(Graphene.Rect().init(x + 2, 2, w - 4, h - 4))
+            elif clip == "rounded":
+                snap.push_rounded_clip(Gsk.RoundedRect().init_from_rect(Graphene.Rect().init(x + 2, 2, w - 4, h - 4), 12))
+            snap.push_opacity(0.5)
+            snap.save()
+            snap.translate(Graphene.Point().init(x + w / 2, 0))
+            snap.scale(0.98, 0.98)
+            snap.translate(Graphene.Point().init(-x - w / 2, -4))
+            snap.append_outset_shadow(card, rgba("rgba(0,0,0,0.28)"), 0, 4, 0, 16)
+            snap.append_color(rgba("rgba(36,36,40,0.6)"), rect)
+            snap.push_rounded_clip(card)
+            snap.append_color(rgba("rgba(80,80,90,0.6)"), rect)
+            snap.append_inset_shadow(card, rgba("rgba(255,255,255,0.1)"), 0, 1, 0, 2)
+            snap.pop()
+            snap.append_border(card, [1, 1, 1, 1], [rgba("rgba(255,255,255,0.12)")] * 4)
+            y = 12
+            for size, style in ((20, ""), (15, "bold"), (13, "italic"), (12, ""), (11, "bold"), (10, "bold"),
+                                (16, "")):
+                layout = self.create_pango_layout("Přelož… česky nebo anglicky ÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ áčďéěíňóřšťúůýž → · ↵")
+                layout.set_font_description(Pango.FontDescription.from_string(f"{style} {size}px"))
+                snap.save()
+                snap.translate(Graphene.Point().init(x + 16, y))
+                snap.append_layout(layout, rgba("white"))
+                snap.restore()
+                y += size + 6
+            snap.restore()
+            snap.pop()
+            if clip:
+                snap.pop()
+        return snap.to_node()
 
     # --- open / close animation ------------------------------------------------------------------
+    def _on_map(self, _w):
+        # The first frame is drawn transparent; the animation starts with the next one, which the compositor asks
+        # for once the window is on screen. (After a slow first map it would be over before anything was seen.)
+        self._anim_value = 0.0
+        ticks = [0]
+
+        def tick(_w, _clock):
+            ticks[0] += 1
+            if ticks[0] < 2:
+                return GLib.SOURCE_CONTINUE
+            self._open_tick = 0
+            self.animate(True)
+            return GLib.SOURCE_REMOVE
+        self._cancel_open_tick()
+        self._open_tick = self.add_tick_callback(tick)
+
+    def _cancel_open_tick(self):
+        if self._open_tick:
+            self.remove_tick_callback(self._open_tick)
+            self._open_tick = 0
+
     def animate(self, show: bool, done=None):
+        self._cancel_open_tick()
         if self._anim is not None:
             self._anim.pause()
         target = Adw.CallbackAnimationTarget.new(self._set_anim_value)
@@ -248,6 +337,24 @@ class Popup(Adw.ApplicationWindow):
             a.connect("done", lambda *_: done())
         self._anim = a
         a.play()
+        if show and log.isEnabledFor(logging.DEBUG):
+            self._trace_frames()
+
+    def _trace_frames(self):
+        """Debug: the app's frame times while it opens (a long frame is a visible stutter)."""
+        t0 = time.monotonic()
+        gaps, last = [], [t0]
+
+        def tick(_w, _clock):
+            now = time.monotonic()
+            gaps.append(round((now - last[0]) * 1000))
+            last[0] = now
+            if now - t0 < 0.6:
+                return GLib.SOURCE_CONTINUE
+            log.debug("frames: first %d ms, max %d ms, %d frames: %s", gaps[0], max(gaps), len(gaps),
+                      " ".join(map(str, gaps)))
+            return GLib.SOURCE_REMOVE
+        self.add_tick_callback(tick)
 
     def _set_anim_value(self, value):
         self._anim_value = value

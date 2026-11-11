@@ -1,7 +1,7 @@
 {
   "uuid": "quick-translate@que.cz",
   "name": "Quick Translate",
-  "description": "Spotlight-like placement for the Quick Translate popup: top of the screen, no animation, reliable focus, click outside closes it. The popup itself is a separate app.",
+  "description": "Spotlight-like placement for the Quick Translate popup: top of the screen, Liquid Glass background, reliable focus, click outside closes it. After login it starts the app in the background, so the first Super+T opens without a stutter. The popup itself is a separate app.",
   "shell-version": ["48"],
   "url": ""
 }

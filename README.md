@@ -133,8 +133,9 @@ python3 -m venv --system-site-packages .venv
 install/install.sh --phase1
 ```
 
-Press **Super+T**. The app starts on the first press (D-Bus activation) and stays resident, so the next
-presses are instant. The repository must stay where it is: the service points to it.
+Press **Super+T**. Without the extension the app starts on the first press (D-Bus activation); with it, a few
+seconds after login. Either way it stays resident, so every press is instant. The repository must stay where it
+is: the service points to it.
 
 ### GNOME Shell extension (optional, recommended)
 
@@ -150,6 +151,11 @@ gapplication action cz.que.QuickTranslate quit   # the next Super+T starts the a
 
 The glass follows [Atelier](https://github.com/knespii/atelier)'s settings when Atelier is installed
 (variant regular/clear/off, dimming); without it, „regular“ is used. GNOME's high contrast turns the glass off.
+
+So that even the first Super+T opens smoothly, the extension readies things about 3 s after login (once per
+session, not after unlocking): it draws the glass once, unseen, so its shader is compiled, and starts the app in
+the background, which loads its data and prepares its window. To start the app only on the first Super+T
+instead, set `QT_NO_PRELOAD=1` in the Shell's environment (e.g. in `~/.config/environment.d/`).
 
 ### Local LLM (optional)
 
@@ -215,7 +221,8 @@ Quick Translate is built to be usable on a work computer:
   `rm ~/.local/state/quick-translate/history.json`.
 - **Debug D-Bus actions** that let a script type into the app or take a snapshot of it exist only when the app
   was started with `QT_DEBUG=1` (developers, see below). Without it the app exposes only `toggle`, `show`,
-  `hide`, `quit`, `glass` and `prefill` (used by the shortcut and the extension).
+  `hide`, `quit`, `glass`, `prefill` and `preload` (used by the shortcut and the extension; `preload` does
+  nothing, it only starts the app).
 - **No telemetry**, no update checks, no analytics. The dictionary data is downloaded once from the sources
   below when you build it; the app itself does not download anything.
 

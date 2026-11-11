@@ -79,6 +79,7 @@ class QuickTranslateCardGlass extends Shell.GLSLEffect {
         this._look = null;
         this._scale = 1;
         this._options = {};
+        this.onPainted = null;  // called once, after the next time the glass is drawn (prewarmGlass())
         this.set_uniform_float(this._at.glassLight, 2, REST_LIGHT);
     }
 
@@ -101,6 +102,11 @@ class QuickTranslateCardGlass extends Shell.GLSLEffect {
                 filterBetweenTexels(this);
         }
         super.vfunc_paint_target(node, paintContext);
+        if (this.onPainted) {
+            const painted = this.onPainted;
+            this.onPainted = null;
+            painted();
+        }
     }
 
     setShape(area, rect, radius) {
@@ -189,6 +195,63 @@ function atelierSettings() {
     } catch (e) {
         return null;
     }
+}
+
+/**
+ * Draw the glass once, small and unseen (1/255 opaque, in the top-left corner), so that its shader and the
+ * frost's blur are compiled and linked before the popup first opens. Otherwise that happens while the popup
+ * opens: a few dropped frames, most of a second while Mesa's shader cache is cold (after an update).
+ *
+ * @returns {{cancel: function(): void}|null} null when glass is off
+ */
+export function prewarmGlass() {
+    const current = currentLook();
+    const monitor = Main.layoutManager.primaryMonitor;
+    if (!current || !monitor)
+        return null;
+    const size = 16;
+    const widget = new St.Widget({width: size, height: size, opacity: 1, reactive: false});
+    Shell.util_set_hidden_from_pick(widget, true);
+    widget.set_position(monitor.x, monitor.y);  // (on a screen: (0, 0) need not be on any)
+    const effect = new CardGlassEffect();
+    widget.add_effect_with_name('quick-translate-glass', effect);
+    widget.add_effect_with_name('quick-translate-frost',
+        new Shell.BlurEffect({mode: Shell.BlurMode.ACTOR, brightness: 1, radius: 2}));
+    effect.setMaterial(current.look, glassScale(), {light: current.light, shadow: true, frosted: true, density: 1});
+    effect.setShape([size, size], [0, 0, size, size], 4);
+
+    let done = false;
+    let painted = 0;
+    let timeout = 0;
+    function cancel() {
+        if (done)
+            return;
+        done = true;
+        if (painted)
+            global.stage.disconnect(painted);
+        if (timeout)
+            GLib.source_remove(timeout);
+        widget.destroy();
+    }
+    // Drawn once (the shader linked): gone with the end of that frame.
+    effect.onPainted = () => {
+        if (done)
+            return;
+        painted = global.stage.connect('after-paint', () => {
+            if (DEBUG)
+                console.log('quick-translate: glass prewarmed');
+            cancel();
+        });
+    };
+    // (Nothing painted for a while, e.g. the screen is off or a fullscreen game runs: the first opening
+    // compiles it.)
+    timeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 5000, () => {
+        timeout = 0;
+        cancel();
+        return GLib.SOURCE_REMOVE;
+    });
+    Main.layoutManager.uiGroup.add_child(widget);
+    return {cancel};
 }
 
 /** Liquid Glass under a window's card (its frame rectangle), with corners of radius logical pixels. */

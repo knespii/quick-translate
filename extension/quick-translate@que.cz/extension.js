@@ -3,7 +3,8 @@
 // The app is a normal GTK window started by a GNOME custom shortcut (Super+T). This extension only
 // recognises its window and: puts it at 22 % of the screen height, skips GNOME's open/close animation
 // (the app animates itself), gives it focus (and closes the overview), hides it when you click outside,
-// and lays Liquid Glass under it (glass.js, Atelier's material) – the app then draws no background.
+// and lays Liquid Glass under it (glass.js, Atelier's material) – the app then draws no background. After
+// login it compiles the glass's shader and starts the app, so the first opening does not stutter.
 // Disable the extension and the app still works, just centered, animated by GNOME and opaque.
 
 import Clutter from 'gi://Clutter';
@@ -15,7 +16,7 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {PopupGlass, currentLook} from './glass.js';
+import {PopupGlass, currentLook, prewarmGlass} from './glass.js';
 
 const APP_ID = 'cz.que.QuickTranslate';
 const APP_PATH = '/cz/que/QuickTranslate';
@@ -24,6 +25,10 @@ const TOP = 0.22;  // top edge at 22 % of the work area
 const RADIUS = 16; // the card's corners, as the app's style.css has them
 const OPEN_MS = 170; // as the app's own animation (popup.py OPEN_MS)
 const DEBUG = GLib.getenv('QT_DEBUG') === '1';
+const PRELOAD_S = 3; // after login: ready the glass and the app before the first Super+T
+// Once per Shell session: the extension is disabled on every screen lock and enabled again on unlock, and an
+// app the user quit is not started again then. (QT_NO_PRELOAD=1 in the Shell's environment: never.)
+let preloaded = false;
 
 function debug(...args) {
     if (DEBUG)
@@ -49,9 +54,36 @@ export default class QuickTranslateExtension extends Extension {
                 const [show, duration] = params.deep_unpack();
                 this._glass?.animate(show, duration);
             });
+        // The first opening must not pay for one-off work: the glass's shader is compiled now, and the app
+        // is started (it stays resident) and readies its window, so Super+T only shows it.
+        this._prewarm = null;
+        this._preloadId = preloaded ? 0 : GLib.timeout_add_seconds(GLib.PRIORITY_LOW, PRELOAD_S, () => {
+            this._preloadId = 0;
+            preloaded = true;
+            let glass = false;
+            try {
+                glass = GLib.getenv('QT_NO_GLASS') !== '1' && Boolean(currentLook());
+                if (glass)
+                    this._prewarm = prewarmGlass();
+            } catch (e) {
+                console.error('quick-translate: glass prewarm failed:', e);
+            }
+            if (GLib.getenv('QT_NO_PRELOAD') !== '1') {
+                this._callApp('preload', [], {start: true});
+                // (So the app readies the look it will have: with or without its own background. Queued behind
+                // the first call while D-Bus starts the app.)
+                this._callApp('glass', [new GLib.Variant('b', glass)], {start: true});
+            }
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     disable() {
+        if (this._preloadId)
+            GLib.source_remove(this._preloadId);
+        this._preloadId = 0;
+        this._prewarm?.cancel();
+        this._prewarm = null;
         global.display.get_selection().disconnectObject(this);
         Gio.DBus.session.signal_unsubscribe(this._animateSignal);
         global.display.disconnectObject(this);
@@ -109,7 +141,10 @@ export default class QuickTranslateExtension extends Extension {
                 Main.activateWindow(win);
                 this._watchClicks(win);
                 this._sendSelection();
+                const t0 = GLib.get_monotonic_time();
                 this._layGlass(win);
+                if (DEBUG)
+                    this._traceFrames(t0, GLib.get_monotonic_time() - t0);
                 GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
                     const f = win.get_frame_rect();
                     debug('shown at', f.x, f.y, f.width, f.height, 'target', x, y, 'focus', win.has_focus());
@@ -129,6 +164,23 @@ export default class QuickTranslateExtension extends Extension {
                 }
             },
             this);
+    }
+
+    // QT_DEBUG: the Shell's frame times while the popup opens (a long frame is a visible stutter).
+    _traceFrames(t0, layUs) {
+        const stage = global.stage;
+        let last = t0;
+        const gaps = [];
+        const id = stage.connect('after-paint', () => {
+            const now = GLib.get_monotonic_time();
+            gaps.push(Math.round((now - last) / 1000));
+            last = now;
+            if (now - t0 > 600000) {
+                stage.disconnect(id);
+                debug(`frames: glass ${(layUs / 1000).toFixed(1)} ms, first ${gaps[0]} ms, ` +
+                    `max ${Math.max(...gaps)} ms, ${gaps.length} frames: ${gaps.join(' ')}`);
+            }
+        });
     }
 
     _watchClicks(win) {
@@ -181,9 +233,17 @@ export default class QuickTranslateExtension extends Extension {
         this._callApp('hide', []);
     }
 
-    _callApp(action, params) {
+    // start: D-Bus may start the app for this call (otherwise only a running app gets it).
+    _callApp(action, params, {start = false} = {}) {
         Gio.DBus.session.call(APP_ID, APP_PATH, 'org.freedesktop.Application', 'ActivateAction',
             new GLib.Variant('(sava{sv})', [action, params, {}]), null,
-            Gio.DBusCallFlags.NO_AUTO_START, 500, null, null);
+            start ? Gio.DBusCallFlags.NONE : Gio.DBusCallFlags.NO_AUTO_START, start ? 30000 : 500, null,
+            (conn, res) => {
+                try {
+                    conn.call_finish(res);
+                } catch (e) {
+                    debug(`app action ${action}:`, e.message);
+                }
+            });
     }
 }

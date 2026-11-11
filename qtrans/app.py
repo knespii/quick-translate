@@ -94,6 +94,8 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
         self._add_action("show", lambda *_: self.show_popup())
         self._add_action("hide", lambda *_: self.hide_popup())
         self._add_action("quit", lambda *_: self.quit())
+        # The GNOME extension starts the app with it after login: startup readies everything (_load_backends).
+        self._add_action("preload", lambda *_: None)
         # The GNOME extension lays Liquid Glass under the window: then the app draws no background.
         self._add_action("glass", lambda _a, p: self.win.set_glass(p.get_boolean()), "b")
         # The GNOME extension hands over the text selected since the popup was last shown ('' for none).
@@ -119,6 +121,14 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
         if self.ctl.mt is not None:
             self.ctl.mt.start()
         self._open_db()
+        GLib.idle_add(self._warm_up, priority=GLib.PRIORITY_LOW)
+        return GLib.SOURCE_REMOVE
+
+    def _warm_up(self):
+        try:
+            self.win.warm_up()
+        except Exception:
+            log.exception("warm-up failed")
         return GLib.SOURCE_REMOVE
 
     def _open_db(self):
@@ -201,7 +211,8 @@ class App(WordMode, ParagraphMode, DescribeMode, Adw.Application):
             self._finish_hide()
         self._t0 = time.monotonic()
         self._was_active = False
-        self.win._anim_value = 0.0  # the first frame is transparent; the map handler animates it in
+        if not self.win.get_visible():
+            self.win._anim_value = 0.0  # the first frame is transparent; the map handler animates it in
         self._open_db()
         self._close_overview()
         self.win.present()
