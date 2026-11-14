@@ -3,6 +3,7 @@
 [ui]
 rows = 7            # visible result rows
 width = 680
+integrated_gpu = true  # a laptop with an NVIDIA card: draw on the integrated GPU, so the NVIDIA one can sleep
 
 [prefill]
 enabled = true      # prefill the query from the selected (PRIMARY) text

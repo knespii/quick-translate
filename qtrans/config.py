@@ -8,7 +8,7 @@ from qtrans.paths import CONFIG
 DEFAULTS = {
     "online": {"enabled": True, "timeout": 4},
     "llm": {"model": "gemma3:4b", "url": "http://127.0.0.1:11434", "keep_alive": "10m", "timeout": 60},
-    "ui": {"rows": 7, "width": 680},
+    "ui": {"rows": 7, "width": 680, "integrated_gpu": True},
     "prefill": {"enabled": True, "max_chars": 80, "max_paragraph_chars": 2000},
     "mt": {"enabled": True, "debounce_ms": 120},
     "paragraph": {"auto_llm": True},

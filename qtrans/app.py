@@ -10,14 +10,19 @@ import os
 import sys
 import time
 
-import gi
+from qtrans import config as config_mod
+from qtrans import gpu
+
+# Before GTK loads: on a laptop with an NVIDIA card, draw on the integrated GPU (the NVIDIA one can sleep).
+_GPU_ENV = gpu.prefer_integrated() if config_mod.load()["ui"]["integrated_gpu"] else {}
+
+import gi  # noqa: E402
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("Gdk", "4.0")
 from gi.repository import Adw, Gdk, Gio, GLib, GObject, Gtk  # noqa: E402
 
-from qtrans import config as config_mod  # noqa: E402
 from qtrans import log as log_mod  # noqa: E402
 from qtrans import paragraph  # noqa: E402
 from qtrans.controller import Controller, MTWorker  # noqa: E402
@@ -83,6 +88,8 @@ class App(WordMode, ParagraphMode, RewriteMode, DescribeMode, Adw.Application):
         self.ctl = Controller(mt, debounce_ms=self.cfg["mt"]["debounce_ms"], io_workers=3)
         # Heavy loading after startup returns, so a D-Bus-activated toggle is handled quickly.
         GLib.idle_add(self._load_backends)
+        if _GPU_ENV:
+            log.info("drawing on the integrated GPU (%s)", ", ".join(_GPU_ENV))
         log.info("startup done (pid %d%s)", os.getpid(), ", debug actions" if DEBUG else "")
 
     def _add_action(self, name: str, cb, ptype: str | None = None):

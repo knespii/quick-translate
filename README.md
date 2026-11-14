@@ -220,7 +220,7 @@ app reads it on start (`gapplication action cz.que.QuickTranslate quit` restarts
 
 | Section | Keys |
 |---|---|
-| `[ui]` | `rows` (visible rows), `width` |
+| `[ui]` | `rows` (visible rows), `width`, `integrated_gpu` (default on: a laptop with an NVIDIA card draws the popup on the integrated GPU, so the NVIDIA one can sleep) |
 | `[prefill]` | `enabled`, `max_chars` (word/phrase), `max_paragraph_chars` (paragraph, max 2000) |
 | `[mt]` | `enabled` (offline machine translation), `debounce_ms` |
 | `[paragraph]` | `auto_llm` (refine Czech paragraphs with the LLM automatically) |
@@ -348,6 +348,7 @@ qtrans/          the app
   items.py, resultlist.py  result rows and their animation
   autodiac.py, diacritics.py  diacritics while typing
   history.py       word history;  sentences.py  the sentence around a word
+  gpu.py           the integrated GPU on a laptop with an NVIDIA card
   search.py        dictionary search;  normalize.py  query normalization;  reverse.py  search by description
   mt.py            offline translation (Bergamot);  online.py  LINDAT;  llm.py  ollama
   controller.py    async work and generations;  config.py, paths.py, log.py, cli.py
