@@ -11,24 +11,29 @@ import urllib.request
 SCHEMA = {
     "type": "object",
     "properties": {
+        # First what is described, in plain English: a small model names the word much better after saying it.
+        "thing": {"type": "string"},
         "candidates": {
             "type": "array",
             "maxItems": 5,
             "items": {
                 "type": "object",
                 "properties": {"en": {"type": "string"}, "cs": {"type": "string"}, "why": {"type": "string"}},
-                "required": ["en", "cs"],
+                "required": ["en", "cs", "why"],
             },
-        }
+        },
     },
-    "required": ["candidates"],
+    "required": ["thing", "candidates"],
 }
 
 SYSTEM = (
-    "You are a bilingual Czech-English lexicographer. A Czech speaker has a word on the tip of their tongue and "
-    "describes it, in Czech or in English. Name the word they most likely mean. Prefer common, everyday words. "
-    "Give up to 5 candidates, best first. For each: the English word, the Czech word (dictionary form), and a very "
-    "short reason in Czech (at most 8 words). Dictionary candidates may be given as hints; use them only if they fit.")
+    "You help a Czech speaker who cannot recall a word. They describe a thing, an action or a feeling, in Czech or "
+    "English. First, in 'thing', say in plain English what is being described (one short sentence; think of the "
+    "field it belongs to: machines, models, electronics, tools, the kitchen, the body, feelings...). Then give up "
+    "to 5 candidate words, best first: 'en' is only the English word or term, 'cs' only the Czech word or term "
+    "(dictionary form), 'why' a very short gloss in Czech (at most 8 words). Prefer the usual name of the thing. "
+    "Never offer vulgar, sexual or offensive words unless the description asks for one. Hints from a crude "
+    "dictionary search may be listed: most of them are wrong, use one only if it is exactly the thing.")
 
 
 TRANSLATE_SCHEMA = {
@@ -100,6 +105,7 @@ class LLM:
         self.keep_alive = keep_alive
         self.timeout = timeout
         self.num_ctx = num_ctx
+        self.last_thing = ""  # suggest(): what the model took the description for
         self._caps = None
 
     def _opts(self, **options) -> dict:
@@ -134,22 +140,29 @@ class LLM:
         user = f"Description: {description}"
         if hints:
             user += "\nDictionary candidates (word: translations): " + "; ".join(f"{a}: {b}" for a, b in hints[:15])
-        body = {
-            "model": self.model, "stream": False, "format": SCHEMA, "keep_alive": self.keep_alive,
-            "options": self._opts(temperature=0, num_predict=700),
-            "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}],
-        }
-        if "thinking" in self.capabilities():
-            body["think"] = False
-        res = self._post("/api/chat", body, self.timeout)
-        content = (res.get("message") or {}).get("content") or ""
-        try:
-            cands = json.loads(content).get("candidates", [])
-        except json.JSONDecodeError:
-            cands = _salvage(content)  # cut off at the token limit: keep the complete candidates
-            if not cands:
-                raise LLMError("nečitelná odpověď modelu")
-        return [c for c in cands if isinstance(c, dict) and (c.get("en") or c.get("cs"))][:5]
+        self.last_thing = ""
+        for temperature in (0, 0.4):  # (a small model sometimes breaks its JSON: once more, a little differently)
+            body = {
+                "model": self.model, "stream": False, "format": SCHEMA, "keep_alive": self.keep_alive,
+                "options": self._opts(temperature=temperature, num_predict=700),
+                "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}],
+            }
+            if "thinking" in self.capabilities():
+                body["think"] = False
+            res = self._post("/api/chat", body, self.timeout)
+            content = (res.get("message") or {}).get("content") or ""
+            try:
+                out = json.loads(content)
+                cands = out.get("candidates", [])
+                self.last_thing = str(out.get("thing") or "")
+                break
+            except (json.JSONDecodeError, AttributeError):
+                cands = _salvage(content)  # cut off at the token limit: keep the complete candidates
+                if cands:
+                    break
+        else:
+            raise LLMError("nečitelná odpověď modelu")
+        return [_tidy(c) for c in cands if isinstance(c, dict) and (c.get("en") or c.get("cs"))][:5]
 
     def translate(self, text: str, src: str, tgt: str) -> str:
         """Natural, faithful translation of a paragraph; paragraph breaks are kept."""
@@ -273,6 +286,12 @@ class LLM:
             body["think"] = False
         res = self._post("/api/chat", body, self.timeout)
         return (res.get("message") or {}).get("content") or ""
+
+
+def _tidy(c: dict) -> dict:
+    """'klepací_nástroj' -> 'klepací nástroj'; surrounding spaces and quotes off."""
+    return {k: re.sub(r"_+", " ", str(v)).strip(" \t\"'“”„") if k in ("en", "cs") else str(v).strip()
+            for k, v in c.items()}
 
 
 def _clean_options(opts: list, translation: str, word: str) -> list[dict]:
