@@ -36,8 +36,11 @@ Quick Translate is licensed under **GPL-2.0-or-later** (see [LICENSE](LICENSE)).
   (ÚFAL, Charles University) — only on Alt+L.
 - **Optional local LLM** via [ollama](https://ollama.com) (default model `gemma3:4b`) for natural paragraph
   translations and word suggestions.
-- **Describe a word** („it is on the tip of my tongue“): `?nástroj na zatloukání hřebíků` finds *kladivo /
-  hammer*; Alt+E asks the local LLM, whose Czech suggestions are verified against the dictionary.
+- **Describe a word** („it is on the tip of my tongue“): `?nástroj na zatloukání hřebíků` gives *kladivo* with
+  *hammer* under it. Once you stop typing, the local LLM names the word; each candidate is checked against the
+  dictionary (the Czech word comes from it), vulgar slang is left out unless you ask for it, and a last row says
+  what the model understood, so a misunderstanding shows. Without the LLM, a search of the dictionary's
+  definitions stands in.
 - **Word history on Tab:** the last three Czech and three English words you translated.
 - **Rewrite the tone (Super+R).** Select an e-mail or a message in any app, press Super+R and pick a tone:
   *Formální* (formal, professional), *Přátelský* (friendly), *Stručnější* (shorter) or *Gramatika* (only
@@ -66,7 +69,7 @@ Quick Translate is licensed under **GPL-2.0-or-later** (see [LICENSE](LICENSE)).
 | Alt+1 … Alt+9 | copy the n-th translation of the selected row |
 | Alt+L | online translation via LINDAT — the only thing that goes to the internet |
 | `?description` | find a word by its description, e.g. `?nástroj na zatloukání hřebíků` |
-| Alt+E | ask the local LLM for the described word (or a better translation) |
+| Alt+E | ask the local LLM again for a `?description` (or for a better translation) |
 | Alt+← | undo: remove the row added by Alt+L or Alt+E |
 | Tab | recently translated words (Tab again or typing returns to the results) |
 | Ctrl+Z | undo typing, including an automatic diacritics fix |
@@ -209,7 +212,8 @@ the in-context suggestions are simply not shown.
 - **A paragraph:** see [Paragraph mode](#paragraph-mode). Fix a badly translated word by clicking it: e.g.
   *bug* for Czech „brouku“ (a term of endearment) offers *beetle, love, honey, sweetheart…* from the dictionary
   and, a few seconds later, *dear, sweetheart* from the LLM with a short reason.
-- **A word you cannot recall:** type `?` and its description; Alt+E asks the LLM.
+- **A word you cannot recall:** type `?` and its description and wait a moment: the Czech word, the English
+  one under it. Enter copies the Czech word, Shift+Enter the English one.
 - **Your own text in another tone:** select it, Super+R, pick a tone, Enter. See [Rewriting](#rewriting-superr).
 - **Second opinion:** Alt+L asks LINDAT online.
 
@@ -245,7 +249,8 @@ Quick Translate is built to be usable on a work computer:
   - a Czech paragraph is polished automatically after its machine translation (`[paragraph] auto_llm`);
   - clicking a word of a paragraph translation asks for in-context alternatives, and picking a dictionary
     alternative asks it to fix the grammar of that sentence;
-  - typing a lone `?` preloads the model (no text is sent);
+  - typing a lone `?` preloads the model (no text is sent), and a `?description` is sent to it once you stop
+    typing;
   - Super+R sends the selected text to the LLM to rewrite it (only after the shortcut, never on its own).
 
   Without ollama running none of this happens and everything else works. To keep text away from the LLM even

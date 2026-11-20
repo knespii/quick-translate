@@ -409,8 +409,11 @@ class App(WordMode, ParagraphMode, RewriteMode, DescribeMode, Adw.Application):
             self._word_online()
 
     def ask_llm(self):
+        q = self.win.get_text().strip()
         if self.win.paragraph:
             self._para_llm()
+        elif q.startswith("?") and q[1:].strip() and self.searcher is not None:
+            self._describe_ask(self._restored(q[1:].strip()))  # (now, or again)
         else:
             self._llm_suggest()
 

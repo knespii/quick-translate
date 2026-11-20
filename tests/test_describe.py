@@ -63,3 +63,46 @@ def test_suggest_gives_up(monkeypatch):
     llm, _sent = make_llm(monkeypatch, ["nonsense", "still nonsense"])
     with pytest.raises(LLMError):
         llm.suggest("x")
+
+
+# --- candidates as rows (the real dictionary; skipped without it) ----------------------------------------------
+@pytest.fixture(scope="module")
+def describer():
+    from qtrans.paths import DB
+    if not DB.exists():
+        pytest.skip("run python -m dictbuild.build_db")
+    from types import SimpleNamespace
+
+    from qtrans.describe import DescribeMode
+    from qtrans.search import Searcher
+
+    class D(DescribeMode):
+        pass
+    d = D()
+    d.searcher = Searcher(DB)
+    d._llm = lambda: SimpleNamespace(last_thing="A hammer")
+    return d
+
+
+def test_rows_czech_first(describer):
+    rows = describer._candidate_rows([{"en": "hammer", "cs": "kladivo", "why": "nástroj"},
+                                      {"en": "mallet", "cs": "klepací nástroj", "why": ""}])
+    assert [r.head for r in rows[:2]] == ["kladivo", "palice"]  # (the dictionary's Czech, not the model's)
+    assert rows[0].badge == "CS" and "<b>hammer</b>" in rows[0].sub
+    assert rows[0].copy == "kladivo" and rows[0].copy_alt == "hammer"
+    assert rows[-1].head == "Model to pochopil jako"
+
+
+def test_rows_drop_rude_and_mismatched(describer):
+    rows = describer._candidate_rows([{"en": "fuck", "cs": "jebat", "why": ""},
+                                      {"en": "lead screw", "cs": "vrtulník", "why": ""},
+                                      {"en": "servo horn", "cs": "páčka serva", "why": ""}])
+    heads = [r.head for r in rows]
+    assert "jebat" not in heads and "vrtulník" not in heads
+    assert "páčka serva" in heads and rows[heads.index("páčka serva")].label == "LLM · neověřeno"
+
+
+def test_rows_no_duplicates(describer):
+    rows = describer._candidate_rows([{"en": "hammer", "cs": "kladivo", "why": ""},
+                                      {"en": "Hammer", "cs": "kladivo", "why": ""}])
+    assert [r.head for r in rows].count("kladivo") == 1
